@@ -1,29 +1,42 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { useAuth } from "@/lib/auth";
+import { useMyHouseholds, getActiveHouseholdId, setActiveHouseholdId } from "@/lib/household";
+import { ActiveListPage } from "@/components/pages/ActiveListPage";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Your App" },
-      { name: "description", content: "Replace this with a one-sentence description of your app." },
-      { property: "og:title", content: "Your App" },
-      { property: "og:description", content: "Replace this with a one-sentence description of your app." },
-    ],
-  }),
-  component: Index,
+  component: HomeGate,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+function HomeGate() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  const { data: memberships, isLoading: hhLoading } = useMyHouseholds(user?.id);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (hhLoading) return;
+    if (!memberships || memberships.length === 0) {
+      navigate({ to: "/onboarding", replace: true });
+      return;
+    }
+    const active = getActiveHouseholdId();
+    if (!active || !memberships.find((m) => m.household_id === active)) {
+      setActiveHouseholdId(memberships[0].household_id);
+    }
+  }, [user, loading, memberships, hhLoading, navigate]);
+
+  if (loading || !user || hhLoading || !memberships || memberships.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+        Ładowanie…
+      </div>
+    );
+  }
+
+  return <ActiveListPage />;
 }
