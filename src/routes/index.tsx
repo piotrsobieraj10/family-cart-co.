@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useMyHouseholds, getActiveHouseholdId, setActiveHouseholdId } from "@/lib/household";
-import { ActiveListPage } from "@/components/pages/ActiveListPage";
+import { ActiveListPage } from "@/pages/ActiveListPage";
 
 export const Route = createFileRoute("/")({
   component: HomeGate,
