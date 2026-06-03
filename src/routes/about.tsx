@@ -1,22 +1,37 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
-import { BrandFooter } from "@/components/Brand";
+import { AppIdentity, BrandFooter } from "@/components/Brand";
+import { APP_DESCRIPTION, APP_NAME } from "@/config/app";
+import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/about")({ component: AboutPage });
 
 function AboutPage() {
+  const { t, language } = useI18n();
   return (
-    <AppShell title="O aplikacji">
+    <AppShell title={t("about")}>
       <div className="text-center py-6">
         <div className="text-5xl mb-2">🛒</div>
-        <h2 className="text-xl font-bold">Zakupy Razem</h2>
-        <p className="text-sm text-muted-foreground mt-1">Wersja 1.0.0 (MVP)</p>
+        <AppIdentity />
       </div>
       <p className="text-sm text-foreground/80 leading-relaxed">
-        Zakupy Razem to prosta aplikacja do prowadzenia wspólnej listy zakupów dla rodziny. Jedna osoba dodaje produkty, druga odhacza je w sklepie — wszystko w czasie rzeczywistym.
+        {language === "en"
+          ? `${APP_NAME} is ${t("appDescription").toLocaleLowerCase()}.`
+          : `${APP_NAME} to ${APP_DESCRIPTION.toLocaleLowerCase()}`}
       </p>
-      <div className="mt-6">
-        <Link to="/privacy" className="text-sm text-primary underline">Polityka prywatności</Link>
+      <div className="mt-6 grid gap-3">
+        <Link
+          to="/privacy"
+          className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold text-center"
+        >
+          {t("privacy")}
+        </Link>
+        <Link
+          to="/whats-new"
+          className="w-full py-3 rounded-2xl border border-border font-semibold text-center"
+        >
+          {t("whatsNew")}
+        </Link>
       </div>
       <BrandFooter className="mt-10" />
     </AppShell>

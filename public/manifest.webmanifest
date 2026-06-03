@@ -1,7 +1,7 @@
 {
-  "name": "Zakupy Razem",
-  "short_name": "Zakupy",
-  "description": "Wspólna rodzinna lista zakupów",
+  "name": "Family Cart",
+  "short_name": "Family Cart",
+  "description": "Aplikacja do wspólnego zarządzania listami zakupów dla domu, rodziny lub grupy.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#fbf8f1",

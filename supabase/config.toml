@@ -1,1 +1,13 @@
 project_id = "kgwhmhbnypwumxrwbtxt"
+
+[functions.add-household-user]
+verify_jwt = true
+
+[functions.complete-profile]
+verify_jwt = true
+
+[functions.register-user]
+verify_jwt = false
+
+[functions.finalize-registration]
+verify_jwt = true

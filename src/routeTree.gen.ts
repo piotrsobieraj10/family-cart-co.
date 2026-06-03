@@ -9,20 +9,52 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WhatsNewRouteImport } from './routes/whats-new'
+import { Route as StoresRouteImport } from './routes/stores'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SelectHouseholdRouteImport } from './routes/select-household'
+import { Route as ReceiptsRouteImport } from './routes/receipts'
+import { Route as QuickAddRouteImport } from './routes/quick-add'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HouseholdRouteImport } from './routes/household'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as ConfirmEmailRouteImport } from './routes/confirm-email'
+import { Route as CompleteProfileRouteImport } from './routes/complete-profile'
 import { Route as AddRouteImport } from './routes/add'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ItemIdRouteImport } from './routes/item.$id'
 
+const WhatsNewRoute = WhatsNewRouteImport.update({
+  id: '/whats-new',
+  path: '/whats-new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoresRoute = StoresRouteImport.update({
+  id: '/stores',
+  path: '/stores',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SelectHouseholdRoute = SelectHouseholdRouteImport.update({
+  id: '/select-household',
+  path: '/select-household',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceiptsRoute = ReceiptsRouteImport.update({
+  id: '/receipts',
+  path: '/receipts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuickAddRoute = QuickAddRouteImport.update({
+  id: '/quick-add',
+  path: '/quick-add',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -50,6 +82,16 @@ const HistoryRoute = HistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConfirmEmailRoute = ConfirmEmailRouteImport.update({
+  id: '/confirm-email',
+  path: '/confirm-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompleteProfileRoute = CompleteProfileRouteImport.update({
+  id: '/complete-profile',
+  path: '/complete-profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AddRoute = AddRouteImport.update({
   id: '/add',
   path: '/add',
@@ -75,24 +117,38 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/add': typeof AddRoute
+  '/complete-profile': typeof CompleteProfileRoute
+  '/confirm-email': typeof ConfirmEmailRoute
   '/history': typeof HistoryRoute
   '/household': typeof HouseholdRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/quick-add': typeof QuickAddRoute
+  '/receipts': typeof ReceiptsRoute
+  '/select-household': typeof SelectHouseholdRoute
   '/settings': typeof SettingsRoute
+  '/stores': typeof StoresRoute
+  '/whats-new': typeof WhatsNewRoute
   '/item/$id': typeof ItemIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/add': typeof AddRoute
+  '/complete-profile': typeof CompleteProfileRoute
+  '/confirm-email': typeof ConfirmEmailRoute
   '/history': typeof HistoryRoute
   '/household': typeof HouseholdRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/quick-add': typeof QuickAddRoute
+  '/receipts': typeof ReceiptsRoute
+  '/select-household': typeof SelectHouseholdRoute
   '/settings': typeof SettingsRoute
+  '/stores': typeof StoresRoute
+  '/whats-new': typeof WhatsNewRoute
   '/item/$id': typeof ItemIdRoute
 }
 export interface FileRoutesById {
@@ -100,12 +156,19 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/add': typeof AddRoute
+  '/complete-profile': typeof CompleteProfileRoute
+  '/confirm-email': typeof ConfirmEmailRoute
   '/history': typeof HistoryRoute
   '/household': typeof HouseholdRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/quick-add': typeof QuickAddRoute
+  '/receipts': typeof ReceiptsRoute
+  '/select-household': typeof SelectHouseholdRoute
   '/settings': typeof SettingsRoute
+  '/stores': typeof StoresRoute
+  '/whats-new': typeof WhatsNewRoute
   '/item/$id': typeof ItemIdRoute
 }
 export interface FileRouteTypes {
@@ -114,36 +177,57 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/add'
+    | '/complete-profile'
+    | '/confirm-email'
     | '/history'
     | '/household'
     | '/login'
     | '/onboarding'
     | '/privacy'
+    | '/quick-add'
+    | '/receipts'
+    | '/select-household'
     | '/settings'
+    | '/stores'
+    | '/whats-new'
     | '/item/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/add'
+    | '/complete-profile'
+    | '/confirm-email'
     | '/history'
     | '/household'
     | '/login'
     | '/onboarding'
     | '/privacy'
+    | '/quick-add'
+    | '/receipts'
+    | '/select-household'
     | '/settings'
+    | '/stores'
+    | '/whats-new'
     | '/item/$id'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/add'
+    | '/complete-profile'
+    | '/confirm-email'
     | '/history'
     | '/household'
     | '/login'
     | '/onboarding'
     | '/privacy'
+    | '/quick-add'
+    | '/receipts'
+    | '/select-household'
     | '/settings'
+    | '/stores'
+    | '/whats-new'
     | '/item/$id'
   fileRoutesById: FileRoutesById
 }
@@ -151,22 +235,64 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AddRoute: typeof AddRoute
+  CompleteProfileRoute: typeof CompleteProfileRoute
+  ConfirmEmailRoute: typeof ConfirmEmailRoute
   HistoryRoute: typeof HistoryRoute
   HouseholdRoute: typeof HouseholdRoute
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
+  QuickAddRoute: typeof QuickAddRoute
+  ReceiptsRoute: typeof ReceiptsRoute
+  SelectHouseholdRoute: typeof SelectHouseholdRoute
   SettingsRoute: typeof SettingsRoute
+  StoresRoute: typeof StoresRoute
+  WhatsNewRoute: typeof WhatsNewRoute
   ItemIdRoute: typeof ItemIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/whats-new': {
+      id: '/whats-new'
+      path: '/whats-new'
+      fullPath: '/whats-new'
+      preLoaderRoute: typeof WhatsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stores': {
+      id: '/stores'
+      path: '/stores'
+      fullPath: '/stores'
+      preLoaderRoute: typeof StoresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/select-household': {
+      id: '/select-household'
+      path: '/select-household'
+      fullPath: '/select-household'
+      preLoaderRoute: typeof SelectHouseholdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receipts': {
+      id: '/receipts'
+      path: '/receipts'
+      fullPath: '/receipts'
+      preLoaderRoute: typeof ReceiptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quick-add': {
+      id: '/quick-add'
+      path: '/quick-add'
+      fullPath: '/quick-add'
+      preLoaderRoute: typeof QuickAddRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -204,6 +330,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/confirm-email': {
+      id: '/confirm-email'
+      path: '/confirm-email'
+      fullPath: '/confirm-email'
+      preLoaderRoute: typeof ConfirmEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/complete-profile': {
+      id: '/complete-profile'
+      path: '/complete-profile'
+      fullPath: '/complete-profile'
+      preLoaderRoute: typeof CompleteProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/add': {
       id: '/add'
       path: '/add'
@@ -239,12 +379,19 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AddRoute: AddRoute,
+  CompleteProfileRoute: CompleteProfileRoute,
+  ConfirmEmailRoute: ConfirmEmailRoute,
   HistoryRoute: HistoryRoute,
   HouseholdRoute: HouseholdRoute,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
+  QuickAddRoute: QuickAddRoute,
+  ReceiptsRoute: ReceiptsRoute,
+  SelectHouseholdRoute: SelectHouseholdRoute,
   SettingsRoute: SettingsRoute,
+  StoresRoute: StoresRoute,
+  WhatsNewRoute: WhatsNewRoute,
   ItemIdRoute: ItemIdRoute,
 }
 export const routeTree = rootRouteImport

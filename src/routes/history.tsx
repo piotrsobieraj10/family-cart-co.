@@ -7,19 +7,34 @@ import { CATEGORY_EMOJI } from "@/lib/categories";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
+import { ensureActiveList } from "@/lib/shopping";
+import { canAddItems, type HouseholdRole } from "@/lib/permissions";
+import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/history")({ component: HistoryPage });
 
 function HistoryPage() {
   return (
     <RequireAuth>
-      {({ householdId, userId }) => <Inner householdId={householdId} userId={userId} />}
+      {({ householdId, userId, role }) => (
+        <Inner householdId={householdId} userId={userId} role={role} />
+      )}
     </RequireAuth>
   );
 }
 
-function Inner({ householdId, userId }: { householdId: string; userId: string }) {
+function Inner({
+  householdId,
+  userId,
+  role,
+}: {
+  householdId: string;
+  userId: string;
+  role?: HouseholdRole;
+}) {
   const qc = useQueryClient();
+  const { language, t } = useI18n();
+  const isEnglish = language === "en";
   const { data } = useQuery({
     queryKey: ["history", householdId],
     queryFn: async () => {
@@ -35,25 +50,16 @@ function Inner({ householdId, userId }: { householdId: string; userId: string })
     },
   });
 
-  const reAdd = async (item: { name: string; category: string | null; quantity: number | null; unit: string | null }) => {
-    const { data: list } = await supabase
-      .from("shopping_lists")
-      .select("id")
-      .eq("household_id", householdId)
-      .in("status", ["active", "shopping", "partially_done"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    let listId = list?.id;
-    if (!listId) {
-      const { data: created, error } = await supabase
-        .from("shopping_lists")
-        .insert({ household_id: householdId, created_by: userId, name: "Lista zakupów" })
-        .select("id")
-        .single();
-      if (error) return toast.error(error.message);
-      listId = created.id;
-    }
+  const reAdd = async (item: {
+    name: string;
+    category: string | null;
+    quantity: number | null;
+    unit: string | null;
+  }) => {
+    if (!canAddItems(role))
+      return toast.error(isEnglish ? "You have view-only access" : "Masz dostęp tylko do podglądu");
+    const list = await ensureActiveList(householdId, userId);
+    const listId = list.id;
     const { error } = await supabase.from("shopping_items").insert({
       list_id: listId,
       household_id: householdId,
@@ -64,31 +70,43 @@ function Inner({ householdId, userId }: { householdId: string; userId: string })
       added_by: userId,
     });
     if (error) return toast.error(error.message);
-    toast.success("Dodano ponownie");
+    toast.success(isEnglish ? "Added again" : "Dodano ponownie");
     qc.invalidateQueries({ queryKey: ["items"] });
   };
 
   return (
-    <AppShell title="Historia">
+    <AppShell title={t("history")}>
       <ul className="space-y-2">
         {(!data || data.length === 0) && (
-          <li className="text-center py-12 text-muted-foreground text-sm">Brak kupionych produktów.</li>
+          <li className="text-center py-12 text-muted-foreground text-sm">
+            {isEnglish ? "No bought products yet." : "Brak kupionych produktów."}
+          </li>
         )}
         {data?.map((it) => (
-          <li key={it.id} className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
+          <li
+            key={it.id}
+            className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3"
+          >
             <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
-              {it.category ? CATEGORY_EMOJI[it.category] ?? "📦" : "📦"}
+              {it.category ? (CATEGORY_EMOJI[it.category] ?? "📦") : "📦"}
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{it.name}</div>
               <div className="text-xs text-muted-foreground">
                 {it.quantity != null ? `${it.quantity} ${it.unit ?? ""} · ` : ""}
-                {it.checked_at ? new Date(it.checked_at).toLocaleDateString("pl-PL") : ""}
+                {it.checked_at
+                  ? new Date(it.checked_at).toLocaleDateString(isEnglish ? "en-US" : "pl-PL")
+                  : ""}
               </div>
             </div>
-            <button onClick={() => reAdd(it)} className="text-primary text-xs font-medium flex items-center gap-1">
-              <RotateCcw className="w-4 h-4" /> Dodaj
-            </button>
+            {canAddItems(role) && (
+              <button
+                onClick={() => reAdd(it)}
+                className="text-primary text-xs font-medium flex items-center gap-1"
+              >
+                <RotateCcw className="w-4 h-4" /> {t("add")}
+              </button>
+            )}
           </li>
         ))}
       </ul>

@@ -4,7 +4,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Zakupy Razem — warm, family-friendly mobile design system */
+/* Family Cart - warm, family-friendly mobile design system */
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -144,5 +144,9 @@
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: contain;
   }
-  html, body, #root { height: 100%; }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 }

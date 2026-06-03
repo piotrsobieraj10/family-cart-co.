@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import type { HouseholdRole } from "@/lib/permissions";
 
 export function useMyHouseholds(userId: string | undefined) {
   return useQuery({
@@ -12,7 +13,12 @@ export function useMyHouseholds(userId: string | undefined) {
         .eq("user_id", userId!)
         .eq("status", "active");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as Array<{
+        household_id: string;
+        role: HouseholdRole;
+        status: string;
+        households: { id: string; name: string; owner_id: string } | null;
+      }>;
     },
   });
 }
@@ -27,6 +33,11 @@ export function getActiveHouseholdId(): string | null {
 export function setActiveHouseholdId(id: string) {
   if (typeof window === "undefined") return;
   localStorage.setItem(KEY, id);
+}
+
+export function clearActiveHouseholdId() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(KEY);
 }
 
 export async function logActivity(params: {

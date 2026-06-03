@@ -1,22 +1,25 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ListChecks, Plus, History, Home, Settings } from "lucide-react";
+import { useI18n } from "@/i18n";
 
 const items = [
-  { to: "/", label: "Lista", icon: ListChecks },
-  { to: "/add", label: "Dodaj", icon: Plus },
-  { to: "/history", label: "Historia", icon: History },
-  { to: "/household", label: "Dom", icon: Home },
-  { to: "/settings", label: "Ustawienia", icon: Settings },
+  { to: "/", labelKey: "shoppingList", icon: ListChecks },
+  { to: "/add", labelKey: "add", icon: Plus },
+  { to: "/history", labelKey: "history", icon: History },
+  { to: "/household", labelKey: "household", icon: Home },
+  { to: "/settings", labelKey: "settings", icon: Settings },
 ] as const;
 
 export function BottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { t } = useI18n();
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t border-border pb-[env(safe-area-inset-bottom)]">
       <ul className="grid grid-cols-5 max-w-md mx-auto">
-        {items.map(({ to, label, icon: Icon }) => {
+        {items.map(({ to, labelKey, icon: Icon }) => {
           const active = pathname === to;
           const isAdd = to === "/add";
+          const label = t(labelKey);
           return (
             <li key={to} className="flex">
               <Link
