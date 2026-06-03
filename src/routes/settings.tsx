@@ -25,9 +25,11 @@ import {
   getDefaultPushPreferences,
   getExistingPushSubscription,
   getPushPermission,
+  hasVapidPublicKey,
+  isHttpsOrLocalhost,
   isPushSupported,
   loadPushPreferences,
-  notifyHousehold,
+  sendTestPush,
   subscribeToPush,
   unsubscribeFromPush,
   updatePushPreferences,
@@ -183,6 +185,8 @@ function PushSettings({
   const { t, language } = useI18n();
   const isEnglish = language === "en";
   const [supported, setSupported] = useState(false);
+  const [httpsOk, setHttpsOk] = useState(false);
+  const [vapidOk, setVapidOk] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">(
     "unsupported",
   );
@@ -195,6 +199,8 @@ function PushSettings({
   const refresh = useCallback(async () => {
     const nextSupported = isPushSupported();
     setSupported(nextSupported);
+    setHttpsOk(isHttpsOrLocalhost());
+    setVapidOk(hasVapidPublicKey());
     setPermission(getPushPermission());
     if (!nextSupported) return;
     const subscription = await getExistingPushSubscription();
@@ -263,15 +269,23 @@ function PushSettings({
   };
 
   const sendTest = async () => {
-    await notifyHousehold({
-      householdId,
-      type: "test",
-      body: isEnglish
-        ? "Test notification from Family Cart"
-        : "Testowe powiadomienie z Family Cart",
-      url: "/settings",
-    });
-    toast.success(isEnglish ? "Test notification sent" : "Wysłano testowe powiadomienie");
+    console.log("[push-test] clicked", { householdId, subscribed, httpsOk, vapidOk });
+    setBusy(true);
+    try {
+      const result = await sendTestPush(householdId);
+      console.log("[push-test] success", result);
+      toast.success(
+        isEnglish
+          ? `Test notification sent (${result.sent} device(s))`
+          : `Testowe powiadomienie wysłane (${result.sent} urządz.)`,
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn("[push-test] failed", msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const statusText = !supported
@@ -293,6 +307,20 @@ function PushSettings({
           <p className="mt-1 text-xs text-muted-foreground">
             {t("pushStatus")}: {statusText}
           </p>
+          {!httpsOk && (
+            <p className="mt-1 text-xs text-destructive font-medium">
+              {isEnglish
+                ? "Push notifications require HTTPS or localhost."
+                : "Powiadomienia push wymagają HTTPS lub localhost."}
+            </p>
+          )}
+          {httpsOk && !vapidOk && (
+            <p className="mt-1 text-xs text-destructive font-medium">
+              {isEnglish
+                ? "VITE_VAPID_PUBLIC_KEY is not set. Contact the administrator."
+                : "Brakuje VITE_VAPID_PUBLIC_KEY. Skontaktuj się z administratorem."}
+            </p>
+          )}
           <p className="mt-1 text-xs text-muted-foreground">{t("pushHttpsHint")}</p>
         </div>
       </div>

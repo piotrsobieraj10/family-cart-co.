@@ -1,0 +1,326 @@
+Mam problem w aplikacji Family Cart po ostatnich patchach.
+
+Objawy:
+1. Nie mogę dodać członka domu/grupy.
+   Wpisuję dane, klikam „Dodaj”, ale użytkownik się nie dodaje albo nie widać żadnego efektu.
+2. Nie mogę wysłać testowego powiadomienia push.
+
+Zweryfikuj i popraw problem bez tworzenia ZIP-a.
+
+WAŻNE:
+- Nie twórz patch ZIP.
+- Nie twórz nowej paczki.
+- Popraw kod bezpośrednio w aktualnym projekcie.
+- Po udanych testach przygotuj commit do GitHuba.
+- Nie przebudowuj aplikacji od zera.
+
+Nie ruszaj bez potrzeby:
+- modelu domów/grup,
+- RLS,
+- rejestracji,
+- szybkiej listy,
+- sklepów,
+- cen,
+- paragonów,
+- motywu,
+- języka,
+- WebP,
+- brandingu.
+
+Aktualny branding ma zostać:
+
+Family Cart
+Version: v26.06.03.1
+Created by: AutoSafe
+
+Nie przywracaj:
+Stworzone przez AutoSafe
+Stworzona przez: AutoSafe
+
+------------------------------------------------------------
+CEL
+------------------------------------------------------------
+
+Sprawdź i napraw:
+1. dodawanie członka domu/grupy,
+2. testowe powiadomienie push,
+3. widoczne komunikaty błędów w UI,
+4. brak reakcji po kliknięciu przycisków.
+
+Po poprawce użytkownik ma widzieć konkretny komunikat:
+- sukces,
+- brak uprawnień,
+- brak aktywnego domu,
+- Edge Function niewdrożona,
+- brak sekretów,
+- błąd Supabase,
+- push niedostępny,
+- brak VAPID key,
+- brak zgody przeglądarki.
+
+------------------------------------------------------------
+1. DODAWANIE CZŁONKA DOMU — FRONTEND
+------------------------------------------------------------
+
+Sprawdź plik:
+
+src/routes/household.tsx
+
+Zweryfikuj i popraw:
+- czy formularz „Dodaj użytkownika” ma poprawne onSubmit,
+- czy przycisk „Dodaj” faktycznie uruchamia submit,
+- czy przycisk nie jest cały czas disabled,
+- czy jest aktywny household_id,
+- czy pobierana jest aktualna rola użytkownika w domu,
+- czy tylko owner/admin może dodawać użytkowników,
+- czy email jest walidowany,
+- czy hasło tymczasowe jest wymagane tylko dla nowego konta,
+- czy dla istniejącego e-maila można dodać użytkownika bez hasła,
+- czy request do Edge Function zawiera:
+  - household_id,
+  - email,
+  - role,
+  - temporaryPassword, jeśli podano,
+- czy Supabase dołącza JWT użytkownika,
+- czy po sukcesie lista członków domu odświeża się automatycznie,
+- czy formularz czyści się po sukcesie,
+- czy po błędzie pokazuje realny komunikat z backendu,
+- czy catch nie połyka błędu bez wyświetlenia.
+
+Dodaj bezpieczną diagnostykę bez sekretów:
+- add member clicked,
+- active household_id exists / missing,
+- current member role,
+- calling add-household-user,
+- response ok/code/error,
+- members refresh started/completed.
+
+Nie loguj:
+- haseł,
+- tokenów,
+- SUPABASE_SERVICE_ROLE_KEY,
+- VAPID_PRIVATE_KEY,
+- pełnych endpointów push.
+
+------------------------------------------------------------
+2. EDGE FUNCTION add-household-user
+------------------------------------------------------------
+
+Sprawdź i popraw:
+
+supabase/functions/add-household-user/index.ts
+
+Funkcja musi:
+1. Obsługiwać CORS i OPTIONS.
+2. Pobierać aktualnego użytkownika z JWT.
+3. Nie ufać user_id z frontendu.
+4. Sprawdzać household_id.
+5. Sprawdzać, czy aktualny użytkownik jest członkiem domu.
+6. Sprawdzać, czy ma rolę owner albo admin.
+7. Obsługiwać nowy e-mail:
+   - jeśli e-mail nie istnieje, wymagaj temporaryPassword min. 6 znaków,
+   - utwórz konto auth przez Supabase Admin API,
+   - ustaw profil:
+     must_complete_profile = true,
+     must_change_password = true,
+   - dodaj użytkownika do household_members.
+8. Obsługiwać istniejący e-mail:
+   - nie twórz drugiego konta,
+   - nie zmieniaj hasła,
+   - dodaj użytkownika do household_members,
+   - jeśli już jest członkiem tego domu, zwróć czytelny komunikat.
+9. Zwracać zawsze JSON:
+   { ok: true, message: "...", ... }
+   albo
+   { ok: false, code: "...", error: "..." }
+
+Obsłuż błędy:
+- MISSING_HOUSEHOLD_ID
+- MISSING_EMAIL
+- INVALID_ROLE
+- NOT_AUTHENTICATED
+- EMAIL_NOT_CONFIRMED
+- NOT_HOUSEHOLD_MEMBER
+- NOT_ALLOWED
+- TEMP_PASSWORD_REQUIRED
+- USER_ALREADY_MEMBER
+- SUPABASE_ADMIN_CONFIG_MISSING
+- AUTH_CREATE_USER_FAILED
+- PROFILE_UPSERT_FAILED
+- MEMBER_INSERT_FAILED
+- UNKNOWN_ERROR
+
+------------------------------------------------------------
+3. TESTOWY PUSH — FRONTEND
+------------------------------------------------------------
+
+Sprawdź pliki:
+
+src/lib/push.ts
+src/routes/settings.tsx
+public/push-sw.js
+
+Zweryfikuj i popraw:
+- czy service worker jest rejestrowany,
+- czy ścieżka do service workera jest poprawna,
+- czy push działa tylko na HTTPS albo localhost,
+- czy aplikacja czytelnie pokazuje, gdy push jest niedostępny,
+- czy VITE_VAPID_PUBLIC_KEY jest ustawiony,
+- czy request permission działa,
+- czy subscribeToPush tworzy prawidłową subskrypcję,
+- czy subskrypcja wysyła się do save-push-subscription,
+- czy testowy push wywołuje send-push-notification,
+- czy testowy push nie działa bez aktywnej subskrypcji,
+- czy błędy są pokazywane w UI.
+
+Dodaj komunikaty:
+- „Powiadomienia push nie są obsługiwane w tej przeglądarce.”
+- „Powiadomienia wymagają HTTPS albo localhost.”
+- „Brak VITE_VAPID_PUBLIC_KEY.”
+- „Najpierw włącz powiadomienia.”
+- „Nie udało się zapisać subskrypcji push.”
+- „Nie udało się wysłać testowego powiadomienia.”
+- „Testowe powiadomienie zostało wysłane.”
+
+------------------------------------------------------------
+4. PUSH — EDGE FUNCTIONS
+------------------------------------------------------------
+
+Sprawdź i popraw:
+
+supabase/functions/save-push-subscription/index.ts
+supabase/functions/delete-push-subscription/index.ts
+supabase/functions/send-push-notification/index.ts
+
+Wymagania:
+- CORS i OPTIONS,
+- user_id pobierany z JWT,
+- household_id sprawdzany,
+- użytkownik musi należeć do household_id,
+- service_role tylko po stronie Edge Functions,
+- VAPID_PRIVATE_KEY i VAPID_SUBJECT tylko po stronie Edge Functions,
+- brak wysyłki do użytkowników spoza household_id,
+- czytelne odpowiedzi JSON,
+- czytelne błędy przy braku sekretów.
+
+------------------------------------------------------------
+5. MIGRACJE I RLS
+------------------------------------------------------------
+
+Sprawdź migracje:
+
+supabase/migrations/20260603090000_multi_households_roles_quick_list.sql
+supabase/migrations/20260603110000_secure_registration.sql
+supabase/migrations/20260603130000_stores_prices_receipts.sql
+supabase/migrations/20260603140000_push_notifications.sql
+
+Zweryfikuj:
+- profiles,
+- households,
+- household_members,
+- push_subscriptions,
+- push_notification_log,
+- RLS dla household_members,
+- RLS dla push_subscriptions,
+- helpery sprawdzania członkostwa i roli.
+
+Jeżeli brakuje czegoś krytycznego, dodaj małą migrację naprawczą:
+
+supabase/migrations/20260603150000_fix_add_user_and_push.sql
+
+Nie przebudowuj całej bazy, jeśli wystarczy mała poprawka.
+
+------------------------------------------------------------
+6. WDROŻENIE EDGE FUNCTIONS
+------------------------------------------------------------
+
+Po poprawkach wypisz dokładnie, że trzeba wdrożyć:
+
+supabase functions deploy add-household-user
+supabase functions deploy save-push-subscription
+supabase functions deploy delete-push-subscription
+supabase functions deploy send-push-notification
+
+Jeżeli Replit może to zrobić i jest zalogowany do Supabase CLI — wykonaj deploy.
+
+Jeżeli nie może, napisz jasno:
+„Kod został poprawiony, ale Edge Functions trzeba wdrożyć ręcznie w Supabase.”
+
+------------------------------------------------------------
+7. ZMIENNE ŚRODOWISKOWE
+------------------------------------------------------------
+
+Sprawdź .env.example i dopisz, jeśli brakuje:
+
+Frontend:
+VITE_VAPID_PUBLIC_KEY=
+
+Supabase Edge Functions:
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:[UZUPEŁNIJ_ADRES_EMAIL]
+
+Nie dodawaj prawdziwych sekretów.
+Nie dawaj SUPABASE_SERVICE_ROLE_KEY ani VAPID_PRIVATE_KEY do VITE_*.
+
+------------------------------------------------------------
+8. TESTY
+------------------------------------------------------------
+
+Po poprawkach uruchom:
+- TypeScript/typecheck,
+- build produkcyjny,
+- lint zmienionych plików, jeśli dostępny.
+
+Przetestuj logicznie lub ręcznie:
+
+Dodawanie członka:
+1. owner/admin dodaje nowy e-mail bez hasła — czytelny błąd,
+2. owner/admin dodaje nowy e-mail z hasłem min. 6 znaków — konto tworzy się i członek pojawia się na liście,
+3. owner/admin dodaje istniejący e-mail bez hasła — użytkownik zostaje dodany,
+4. ten sam e-mail drugi raz — komunikat, że już należy do grupy,
+5. member/viewer nie może dodać użytkownika,
+6. brak aktywnego household_id — czytelny błąd.
+
+Push:
+1. brak VITE_VAPID_PUBLIC_KEY — czytelny błąd,
+2. brak HTTPS — czytelny błąd,
+3. push unsupported — czytelny błąd,
+4. włączenie push zapisuje subskrypcję,
+5. test push wywołuje send-push-notification,
+6. brak VAPID_PRIVATE_KEY — czytelny błąd,
+7. po poprawnych kluczach test push przechodzi.
+
+------------------------------------------------------------
+9. GIT
+------------------------------------------------------------
+
+Nie twórz ZIP-a.
+
+Po udanych testach wykonaj:
+
+git status
+git add .
+git commit -m "Fix add household member and push diagnostics"
+git push
+
+Jeśli nie możesz wykonać push, zostaw zmiany w projekcie i podaj dokładne komendy do ręcznego wykonania.
+
+------------------------------------------------------------
+10. PODSUMOWANIE
+------------------------------------------------------------
+
+Na końcu podsumuj po polsku:
+- jaka była przyczyna problemu,
+- co poprawiono,
+- jakie pliki zmieniono,
+- czy TypeScript przeszedł,
+- czy build przeszedł,
+- czy lint przeszedł,
+- jakie migracje trzeba zastosować,
+- jakie Edge Functions trzeba wdrożyć,
+- jakie sekrety trzeba ustawić,
+- czy prawdziwy test push wymaga HTTPS i VAPID keys,
+- czy commit i push zostały wykonane.

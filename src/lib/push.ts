@@ -45,6 +45,16 @@ export function isPushSupported() {
   );
 }
 
+export function isHttpsOrLocalhost() {
+  if (typeof window === "undefined") return false;
+  const { protocol, hostname } = window.location;
+  return protocol === "https:" || hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+export function hasVapidPublicKey() {
+  return !!VAPID_PUBLIC_KEY;
+}
+
 export function getPushPermission(): NotificationPermission | "unsupported" {
   if (!isPushSupported()) return "unsupported";
   return Notification.permission;
@@ -80,6 +90,9 @@ export async function getExistingPushSubscription() {
 }
 
 export async function subscribeToPush(householdId: string, preferences?: PushPreferences) {
+  if (!isHttpsOrLocalhost()) {
+    throw new Error("Powiadomienia push wymagają HTTPS lub localhost.");
+  }
   if (!VAPID_PUBLIC_KEY) {
     throw new Error("Brakuje VITE_VAPID_PUBLIC_KEY. Ustaw publiczny klucz VAPID w konfiguracji.");
   }
@@ -111,7 +124,7 @@ export async function subscribeToPush(householdId: string, preferences?: PushPre
       preferences: mergedPreferences,
     },
   });
-  if (error) throw error;
+  if (error) throw new Error(String(error.message ?? "Nie udało się zapisać subskrypcji push."));
   if (data?.error) throw new Error(String(data.error));
   return { subscription, preferences: mergedPreferences };
 }
@@ -154,9 +167,79 @@ export async function updatePushPreferences(householdId: string, preferences: Pu
       preferences: mergedPreferences,
     },
   });
-  if (error) throw error;
+  if (error) throw new Error(String(error.message ?? "Nie udało się zapisać preferencji push."));
   if (data?.error) throw new Error(String(data.error));
   return mergedPreferences;
+}
+
+/**
+ * Sends a test push notification to the calling user's OWN subscriptions
+ * by passing include_actor: true. Without this flag, send-push-notification
+ * skips the sender's subscriptions, so a solo household would never receive
+ * the notification.
+ */
+export async function sendTestPush(householdId: string) {
+  if (!isHttpsOrLocalhost()) {
+    throw new Error(
+      "Powiadomienia push wymagają HTTPS lub localhost. Test push nie działa na HTTP.",
+    );
+  }
+  if (!VAPID_PUBLIC_KEY) {
+    throw new Error(
+      "Brakuje VITE_VAPID_PUBLIC_KEY. Ustaw publiczny klucz VAPID w konfiguracji aplikacji.",
+    );
+  }
+  if (!isPushSupported()) {
+    throw new Error("Powiadomienia push nie są obsługiwane w tej przeglądarce.");
+  }
+  const subscription = await getExistingPushSubscription();
+  if (!subscription) {
+    throw new Error("Najpierw włącz powiadomienia push, żeby wysłać test.");
+  }
+
+  console.log("[push-test] calling send-push-notification with include_actor:true");
+
+  const { data, error } = await supabase.functions.invoke("send-push-notification", {
+    body: {
+      household_id: householdId,
+      notification_type: "test",
+      title: "Family Cart",
+      body: "Testowe powiadomienie z Family Cart",
+      include_actor: true,
+      payload: { type: "test", url: "/settings" },
+    },
+  });
+
+  if (error) {
+    const msg = String(error.message ?? error);
+    console.warn("[push-test] edge function error", msg);
+    if (msg.toLowerCase().includes("vapid") || msg.toLowerCase().includes("edge function"))
+      throw new Error(`Edge Function błąd: ${msg}`);
+    throw new Error(`Nie udało się wysłać testowego powiadomienia: ${msg}`);
+  }
+
+  if (data?.error) {
+    const msg = String(data.error);
+    console.warn("[push-test] response error", msg);
+    throw new Error(`Błąd serwera: ${msg}`);
+  }
+
+  const sent: number = data?.sent ?? 0;
+  const failed: number = data?.failed ?? 0;
+  console.log("[push-test] response", { sent, failed });
+
+  if (sent === 0 && failed === 0) {
+    throw new Error(
+      "Brak aktywnych subskrypcji push — powiadomienie nie zostało wysłane do nikogo. Włącz powiadomienia i spróbuj ponownie.",
+    );
+  }
+  if (sent === 0 && failed > 0) {
+    throw new Error(
+      `Wysyłka testowego powiadomienia nie powiodła się (${failed} błąd(ów)). Sprawdź klucze VAPID w Supabase.`,
+    );
+  }
+
+  return { sent, failed };
 }
 
 export async function notifyHousehold(params: {
@@ -185,6 +268,6 @@ export async function notifyHousehold(params: {
       },
     });
   } catch (error) {
-    console.warn("Push notification skipped", error);
+    console.warn("[push] notifyHousehold skipped", error);
   }
 }

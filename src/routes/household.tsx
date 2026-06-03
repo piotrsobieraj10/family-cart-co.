@@ -109,8 +109,20 @@ function Inner({
 
   const addMember = async (event: React.FormEvent) => {
     event.preventDefault();
+    console.log("[add-member] clicked", {
+      householdId: householdId || "MISSING",
+      email: email.trim(),
+      role: newRole,
+      hasPassword: temporaryPassword.length > 0,
+      callerRole: role,
+    });
+    if (!householdId) {
+      toast.error(isEnglish ? "No active household selected." : "Brak aktywnego domu/grupy.");
+      return;
+    }
     setBusy(true);
     try {
+      console.log("[add-member] calling add-household-user");
       const { data, error } = await supabase.functions.invoke("add-household-user", {
         body: {
           household_id: householdId,
@@ -120,7 +132,27 @@ function Inner({
           label: label.trim() || null,
         },
       });
-      if (error) throw error;
+      console.log("[add-member] response", {
+        ok: data?.ok,
+        code: data?.code,
+        created: data?.created,
+        hasUserId: !!data?.user_id,
+        error: data?.error,
+        invokeError: error ? String(error.message ?? error) : null,
+      });
+      if (error) {
+        const msg = String(error.message ?? error);
+        if (msg.includes("not found") || msg.includes("Edge Function")) {
+          toast.error(
+            isEnglish
+              ? "Edge Function not deployed. Ask the admin to run: supabase functions deploy add-household-user"
+              : "Edge Function nie jest wdrożona. Poproś admina: supabase functions deploy add-household-user",
+          );
+        } else {
+          toast.error(msg);
+        }
+        return;
+      }
       if (data?.ok === false) {
         toast.error(
           data.error ?? (isEnglish ? "Could not add user" : "Nie udało się dodać użytkownika"),
@@ -141,7 +173,7 @@ function Inner({
             ? "New account created with a temporary password"
             : "Nowe konto zostało utworzone z hasłem tymczasowym"
           : isEnglish
-            ? "User exists - added to this group without changing password"
+            ? "User exists — added to this group without changing password"
             : "Użytkownik istnieje — dodano go do tej grupy bez zmiany hasła",
       );
       if (data?.user_id) {
@@ -161,15 +193,18 @@ function Inner({
       setEmail("");
       setTemporaryPassword("");
       setLabel("");
+      console.log("[add-member] members refresh started");
       await qc.invalidateQueries({ queryKey: ["members", householdId] });
+      console.log("[add-member] members refresh completed");
     } catch (error) {
-      toast.error(
+      const msg =
         error instanceof Error
           ? error.message
           : isEnglish
             ? "Could not add user"
-            : "Nie udało się dodać użytkownika",
-      );
+            : "Nie udało się dodać użytkownika";
+      console.error("[add-member] unexpected error", error);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
