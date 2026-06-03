@@ -121,6 +121,12 @@ function Inner({
         },
       });
       if (error) throw error;
+      if (data?.ok === false) {
+        toast.error(
+          data.error ?? (isEnglish ? "Could not add user" : "Nie udało się dodać użytkownika"),
+        );
+        return;
+      }
       if (data?.code === "already_member") {
         toast.error(
           isEnglish
@@ -221,15 +227,25 @@ function Inner({
             placeholder={isEnglish ? "Email address" : "Adres e-mail"}
             className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
           />
-          <input
-            required
-            minLength={6}
-            type="password"
-            value={temporaryPassword}
-            onChange={(e) => setTemporaryPassword(e.target.value)}
-            placeholder={isEnglish ? "Temporary password" : "Hasło tymczasowe"}
-            className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
-          />
+          <div className="space-y-1">
+            <input
+              minLength={6}
+              type="password"
+              value={temporaryPassword}
+              onChange={(e) => setTemporaryPassword(e.target.value)}
+              placeholder={
+                isEnglish
+                  ? "Temporary password for a new account"
+                  : "Hasło tymczasowe dla nowego konta"
+              }
+              className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
+            />
+            <p className="text-xs text-muted-foreground px-1">
+              {isEnglish
+                ? "Required only if this email does not exist in Family Cart yet."
+                : "Wymagane tylko wtedy, gdy ten e-mail nie istnieje jeszcze w Family Cart."}
+            </p>
+          </div>
           <select
             value={newRole}
             onChange={(e) => setNewRole(e.target.value as Exclude<HouseholdRole, "owner">)}

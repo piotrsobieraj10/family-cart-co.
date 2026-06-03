@@ -1,0 +1,70 @@
+Wgrałem patch ZIP:
+
+family_cart_add_user_fix_patch_v26_06_03_4.zip
+
+Zastosuj go do aktualnego projektu Family Cart.
+
+Patch dotyczy tylko problemu z dodawaniem użytkownika do domu/grupy.
+
+Nie zaczynaj projektu od nowa.
+Nie ruszaj bez potrzeby:
+- modelu domów/grup,
+- RLS,
+- rejestracji,
+- sklepów,
+- cen,
+- paragonów,
+- push,
+- motywu,
+- języka,
+- szybkiej listy.
+
+Najpierw:
+1. rozpakuj ZIP do folderu tymczasowego,
+2. przeczytaj README_ADD_USER_PATCH_REPLIT.md,
+3. przeczytaj ADD_USER_PATCH_CHANGED_FILES.txt,
+4. skopiuj pliki patcha do projektu zgodnie ze ścieżkami.
+
+Patch zmienia:
+- supabase/functions/add-household-user/index.ts
+- src/routes/household.tsx
+
+Cel poprawki:
+1. Dodać istniejący e-mail do domu bez wymagania hasła tymczasowego.
+2. Wymagać hasła tymczasowego tylko wtedy, gdy e-mail nie istnieje jeszcze w systemie.
+3. Nie zmieniać hasła istniejącego użytkownika.
+4. Pokazywać prawdziwe komunikaty błędów z Edge Function.
+5. Uodpornić Edge Function add-household-user na błędy konfiguracji i brakujące dane.
+6. Zachować obsługę push notifyHousehold, jeśli jest już w pliku household.tsx.
+
+Po zastosowaniu patcha:
+1. Uruchom TypeScript/typecheck.
+2. Uruchom build produkcyjny.
+3. Uruchom lint zmienionych plików, jeśli dostępny.
+4. Wdróż ponownie Edge Function:
+
+supabase functions deploy add-household-user
+
+Sprawdź, czy Edge Function ma dostęp do sekretów:
+- SUPABASE_URL
+- SUPABASE_ANON_KEY
+- SUPABASE_SERVICE_ROLE_KEY
+
+SUPABASE_SERVICE_ROLE_KEY nie może być w frontendzie ani w VITE_*.
+
+Testy:
+1. Owner/admin dodaje nowy e-mail bez hasła — aplikacja ma pokazać, że hasło tymczasowe jest wymagane.
+2. Owner/admin dodaje nowy e-mail z hasłem min. 6 znaków — konto ma się utworzyć i trafić do domu.
+3. Owner/admin dodaje istniejący e-mail bez hasła — użytkownik ma zostać dodany do domu bez zmiany hasła.
+4. Ten sam użytkownik dodany drugi raz do tego samego domu — aplikacja ma pokazać, że już należy do grupy.
+5. Member/viewer próbuje dodać użytkownika — operacja ma być zablokowana.
+6. Konto bez potwierdzonego e-maila próbuje dodać użytkownika — ma pojawić się czytelny komunikat o potwierdzeniu e-maila.
+
+Na końcu podsumuj po polsku:
+- czy patch został zastosowany,
+- jakie pliki zmieniono,
+- czy TypeScript przeszedł,
+- czy build przeszedł,
+- czy lint przeszedł,
+- czy trzeba ponownie wdrożyć add-household-user,
+- czy test dodania nowego i istniejącego użytkownika przeszedł.
