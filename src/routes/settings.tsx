@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { RequireAuth } from "@/pages/RequireAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,11 +14,26 @@ import {
   Home as HomeIcon,
   Store,
   ReceiptText,
+  Bell,
 } from "lucide-react";
 import { useMyHouseholds } from "@/lib/household";
 import { APP_AUTHOR_TEXT, APP_NAME, APP_VERSION } from "@/config/app";
 import { useI18n, type Language } from "@/i18n";
 import { useThemePreference, type ThemeMode } from "@/theme";
+import { toast } from "sonner";
+import {
+  getDefaultPushPreferences,
+  getExistingPushSubscription,
+  getPushPermission,
+  isPushSupported,
+  loadPushPreferences,
+  notifyHousehold,
+  subscribeToPush,
+  unsubscribeFromPush,
+  updatePushPreferences,
+  type PushPreferences,
+} from "@/lib/push";
+import { canManageHousehold } from "@/lib/permissions";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
 
@@ -109,6 +125,13 @@ function Inner({ userId, householdId }: { userId: string; householdId: string })
             : "Ten wybór zapisuje się lokalnie na tym urządzeniu."}
         </p>
       </section>
+
+      <PushSettings
+        householdId={householdId}
+        canSendTest={canManageHousehold(
+          memberships?.find((m) => m.household_id === householdId)?.role,
+        )}
+      />
       <ul className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden mb-4">
         <Row
           to="/household"
@@ -147,6 +170,211 @@ function Row({ to, icon, label }: { to: string; icon: React.ReactNode; label: st
         <ChevronRight className="w-4 h-4 text-muted-foreground" />
       </Link>
     </li>
+  );
+}
+
+function PushSettings({
+  householdId,
+  canSendTest,
+}: {
+  householdId: string;
+  canSendTest?: boolean;
+}) {
+  const { t, language } = useI18n();
+  const isEnglish = language === "en";
+  const [supported, setSupported] = useState(false);
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(
+    "unsupported",
+  );
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [preferences, setPreferences] = useState<Required<PushPreferences>>(
+    getDefaultPushPreferences(),
+  );
+
+  const refresh = useCallback(async () => {
+    const nextSupported = isPushSupported();
+    setSupported(nextSupported);
+    setPermission(getPushPermission());
+    if (!nextSupported) return;
+    const subscription = await getExistingPushSubscription();
+    setSubscribed(!!subscription);
+    if (subscription) setPreferences(await loadPushPreferences(householdId));
+  }, [householdId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const enable = async () => {
+    setBusy(true);
+    try {
+      await subscribeToPush(householdId, preferences);
+      await refresh();
+      toast.success(t("pushEnabledSuccess"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : isEnglish
+            ? "Could not enable notifications"
+            : "Nie udało się włączyć powiadomień",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async () => {
+    setBusy(true);
+    try {
+      await unsubscribeFromPush(householdId);
+      await refresh();
+      toast.success(t("pushDisabledSuccess"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : isEnglish
+            ? "Could not disable notifications"
+            : "Nie udało się wyłączyć powiadomień",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const togglePreference = async (key: keyof PushPreferences) => {
+    const next = { ...preferences, [key]: !preferences[key] };
+    setPreferences(next as Required<PushPreferences>);
+    if (!subscribed) return;
+    try {
+      await updatePushPreferences(householdId, next);
+      toast.success(t("pushPrefsSaved"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : isEnglish
+            ? "Could not save preferences"
+            : "Nie udało się zapisać preferencji",
+      );
+    }
+  };
+
+  const sendTest = async () => {
+    await notifyHousehold({
+      householdId,
+      type: "test",
+      body: isEnglish
+        ? "Test notification from Family Cart"
+        : "Testowe powiadomienie z Family Cart",
+      url: "/settings",
+    });
+    toast.success(isEnglish ? "Test notification sent" : "Wysłano testowe powiadomienie");
+  };
+
+  const statusText = !supported
+    ? t("pushUnsupported")
+    : subscribed
+      ? t("pushSubscribed")
+      : permission === "denied"
+        ? t("pushDenied")
+        : permission === "granted"
+          ? t("pushGranted")
+          : t("pushDefault");
+
+  return (
+    <section className="bg-card border border-border rounded-2xl p-4 mb-4">
+      <div className="flex items-start gap-3">
+        <Bell className="w-5 h-5 text-muted-foreground mt-0.5" />
+        <div className="flex-1">
+          <h2 className="font-medium">{t("notifications")}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("pushStatus")}: {statusText}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("pushHttpsHint")}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={enable}
+          disabled={busy || !supported || subscribed}
+          className="rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {t("enableNotifications")}
+        </button>
+        <button
+          type="button"
+          onClick={disable}
+          disabled={busy || !subscribed}
+          className="rounded-xl border border-border px-3 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          {t("disableNotifications")}
+        </button>
+      </div>
+      <div className="mt-4 space-y-2">
+        <div className="text-sm font-medium">{t("notificationPrefs")}</div>
+        <PreferenceRow
+          label={t("notifyItemAdded")}
+          checked={preferences.item_added}
+          onToggle={() => togglePreference("item_added")}
+        />
+        <PreferenceRow
+          label={t("notifyItemBought")}
+          checked={preferences.item_bought}
+          onToggle={() => togglePreference("item_bought")}
+        />
+        <PreferenceRow
+          label={t("notifyShoppingFinished")}
+          checked={preferences.shopping_finished}
+          onToggle={() => togglePreference("shopping_finished")}
+        />
+        <PreferenceRow
+          label={t("notifyHouseholdAdded")}
+          checked={preferences.household_added}
+          onToggle={() => togglePreference("household_added")}
+        />
+        <PreferenceRow
+          label={t("notifyReminders")}
+          checked={preferences.reminders}
+          onToggle={() => togglePreference("reminders")}
+        />
+      </div>
+      {canSendTest && (
+        <button
+          type="button"
+          onClick={sendTest}
+          disabled={busy || !subscribed}
+          className="mt-3 w-full rounded-xl border border-border px-3 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          {t("sendTestNotification")}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function PreferenceRow({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3 py-2 text-sm">
+      <span>{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="h-4 w-4 accent-primary"
+      />
+    </label>
   );
 }
 

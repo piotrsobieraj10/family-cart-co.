@@ -115,7 +115,26 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-        <PrivacySection title="7. Cel przetwarzania danych">
+
+        <PrivacySection title="7. Powiadomienia push">
+          <p>
+            Użytkownik może dobrowolnie włączyć powiadomienia push. W tym celu aplikacja może
+            przetwarzać techniczne dane subskrypcji urządzenia lub przeglądarki, takie jak endpoint
+            push, klucze p256dh/auth, identyfikator użytkownika, identyfikator domu/grupy oraz
+            preferencje typów powiadomień.
+          </p>
+          <p>
+            Dane subskrypcji push są używane wyłącznie do wysyłania powiadomień Family Cart, np. o
+            dodaniu produktu, zakończeniu zakupów albo zmianach w domu/grupie. Użytkownik może
+            wyłączyć powiadomienia w aplikacji lub w ustawieniach przeglądarki/systemu.
+          </p>
+          <p>
+            Powiadomienia są wysyłane tylko w obrębie domu lub grupy, do której użytkownik ma
+            aktywny dostęp. Dane techniczne powiadomień nie są sprzedawane.
+          </p>
+        </PrivacySection>
+
+        <PrivacySection title="8. Cel przetwarzania danych">
           <p>
             Dane są przetwarzane w celu zapewnienia działania konta, logowania, współdzielenia list
             zakupów, zarządzania członkami grup, prezentowania historii aktywności oraz ochrony
@@ -123,7 +142,7 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-        <PrivacySection title="8. Dostawcy usług">
+        <PrivacySection title="9. Dostawcy usług">
           <p>
             Aplikacja może korzystać z Supabase jako dostawcy logowania, bazy danych oraz storage
             plików. Dostawcy techniczni przetwarzają dane w zakresie niezbędnym do świadczenia
@@ -131,7 +150,7 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-        <PrivacySection title="9. Udostępnianie i sprzedaż danych">
+        <PrivacySection title="10. Udostępnianie i sprzedaż danych">
           <p>
             Dane użytkowników nie są sprzedawane. Dane mogą być udostępniane dostawcom technicznym
             wyłącznie w zakresie potrzebnym do działania aplikacji albo gdy wymagają tego
@@ -139,7 +158,7 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-        <PrivacySection title="10. Bezpieczeństwo">
+        <PrivacySection title="11. Bezpieczeństwo">
           <p>
             Dostęp do danych jest ograniczany przez logowanie, role i uprawnienia w grupie oraz
             mechanizmy bezpieczeństwa bazy danych, w tym Row Level Security (RLS). Celem tych
@@ -151,7 +170,7 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-        <PrivacySection title="11. Okres przechowywania danych">
+        <PrivacySection title="12. Okres przechowywania danych">
           <p>
             Dane są przechowywane tak długo, jak jest to potrzebne do działania konta, domu lub
             grupy, a następnie mogą zostać usunięte po zakończeniu korzystania z aplikacji lub po
@@ -163,7 +182,7 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-        <PrivacySection title="12. Prawa użytkownika">
+        <PrivacySection title="13. Prawa użytkownika">
           <p>
             Użytkownik może poprosić o dostęp do swoich danych, ich poprawienie, usunięcie,
             ograniczenie przetwarzania lub uzyskać informacje o sposobie ich przetwarzania, w
@@ -175,7 +194,7 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-        <PrivacySection title="13. Zmiany polityki">
+        <PrivacySection title="14. Zmiany polityki">
           <p>
             Polityka prywatności może być aktualizowana wraz ze zmianami aplikacji lub wymagań
             prawnych. Aktualna data i wersja polityki są widoczne na początku dokumentu.

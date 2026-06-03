@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { Crown, Trash2 } from "lucide-react";
 import { useI18n } from "@/i18n";
+import { notifyHousehold } from "@/lib/push";
 
 export const Route = createFileRoute("/household")({ component: HouseholdPage });
 
@@ -137,6 +138,14 @@ function Inner({
             ? "User exists - added to this group without changing password"
             : "Użytkownik istnieje — dodano go do tej grupy bez zmiany hasła",
       );
+      if (data?.user_id) {
+        void notifyHousehold({
+          householdId,
+          type: "household_added",
+          body: isEnglish ? `Added user: ${email.trim()}` : `Dodano użytkownika: ${email.trim()}`,
+          url: "/household",
+        });
+      }
       if (data?.created)
         toast.info(
           isEnglish

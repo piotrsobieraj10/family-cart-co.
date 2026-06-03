@@ -10,6 +10,7 @@ import { logActivity } from "@/lib/household";
 import { toast } from "sonner";
 import { findActiveList } from "@/lib/shopping";
 import { formatPrice } from "@/lib/products";
+import { notifyHousehold } from "@/lib/push";
 import { useI18n } from "@/i18n";
 import {
   canAddItems,
@@ -279,6 +280,13 @@ function Inner({
       action: "shopping_finished",
       description: newStatus === "done" ? "Wszystko kupione" : "Zakupy częściowo zrobione",
       list_id: listId,
+    });
+    void notifyHousehold({
+      householdId,
+      type: "shopping_finished",
+      body: isEnglish ? "Shopping finished" : "Zakończono zakupy",
+      listId,
+      url: "/",
     });
     setShoppingMode(false);
     toast.success(

@@ -10,6 +10,7 @@ import { logActivity } from "@/lib/household";
 import { ensureActiveList } from "@/lib/shopping";
 import { canAddItems, type HouseholdRole } from "@/lib/permissions";
 import { normalizePhrase, rememberProduct, saveManualPrice } from "@/lib/products";
+import { notifyHousehold } from "@/lib/push";
 import { toast } from "sonner";
 import { Camera, X } from "lucide-react";
 import { useI18n } from "@/i18n";
@@ -202,6 +203,14 @@ function Inner({
         description: name.trim(),
         list_id: listId,
         item_id: item.id,
+      });
+      void notifyHousehold({
+        householdId,
+        type: "item_added",
+        body: isEnglish ? `Added: ${name.trim()}` : `Dodano: ${name.trim()}`,
+        listId,
+        itemId: item.id,
+        url: "/",
       });
 
       qc.invalidateQueries({ queryKey: ["items"] });

@@ -1,0 +1,127 @@
+Wgrałem paczkę ZIP z patchem powiadomień push do aplikacji Family Cart:
+
+family_cart_push_patch_v26_06_03_3.zip
+
+Zastosuj ten patch do aktualnego projektu w Replit.
+
+Nie zaczynaj projektu od nowa.
+Nie nadpisuj całej aplikacji starszą wersją.
+Nie usuwaj działających funkcji.
+Nie ruszaj bez potrzeby:
+- modelu domów/grup,
+- RLS,
+- rejestracji,
+- Edge Functions rejestracji,
+- szybkiej listy,
+- sklepów,
+- cen,
+- paragonów,
+- motywu,
+- języka,
+- WebP.
+
+Patch dotyczy tylko powiadomień push.
+
+Najpierw:
+1. znajdź plik ZIP w katalogu projektu albo w katalogu uploadów,
+2. rozpakuj go do folderu tymczasowego,
+3. przeczytaj:
+   - README_PUSH_PATCH_REPLIT.md,
+   - PUSH_PATCH_CHANGED_FILES.txt,
+   - LOVEABLE_PATCH.md,
+4. skopiuj tylko pliki z patcha do aktualnego projektu,
+5. nie kopiuj node_modules, dist, .git ani .env.
+
+Patch powinien dodać:
+
+1. Powiadomienia push PWA
+- service worker: public/push-sw.js,
+- helper push: src/lib/push.ts,
+- sekcję Powiadomienia w ustawieniach,
+- włączanie i wyłączanie powiadomień,
+- preferencje typów powiadomień.
+
+2. Supabase
+Migracja:
+- supabase/migrations/20260603140000_push_notifications.sql
+
+Edge Functions:
+- supabase/functions/save-push-subscription/index.ts
+- supabase/functions/delete-push-subscription/index.ts
+- supabase/functions/send-push-notification/index.ts
+
+3. UI i i18n
+- dodaj tłumaczenia PL/EN dla powiadomień,
+- ustawienia mają pokazywać sekcję „Powiadomienia”,
+- jeśli przeglądarka nie obsługuje push, pokaż komunikat,
+- jeśli powiadomienia są zablokowane w przeglądarce, pokaż komunikat.
+
+4. Polityka prywatności
+Dopisz informację o:
+- subskrypcjach push,
+- endpointach push,
+- kluczach technicznych p256dh/auth,
+- preferencjach powiadomień,
+- możliwości wyłączenia powiadomień,
+- tym, że dane push nie są sprzedawane.
+
+5. Branding ma zostać bez zmian:
+
+Family Cart
+Version: v26.06.03.1
+Created by: AutoSafe
+
+Nie przywracaj starego tekstu:
+Stworzona przez: AutoSafe
+Stworzone przez AutoSafe
+
+Wymagane zmienne środowiskowe:
+
+Frontend:
+VITE_VAPID_PUBLIC_KEY=
+
+Backend / Edge Functions:
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:[UZUPEŁNIJ_ADRES_EMAIL]
+
+Nie dodawaj VAPID_PRIVATE_KEY do frontendu.
+Nie dodawaj VAPID_PRIVATE_KEY do VITE_*.
+Nie commituj prawdziwych sekretów.
+
+Po zastosowaniu patcha uruchom:
+
+- TypeScript/typecheck,
+- build produkcyjny,
+- lint zmienionych plików, jeśli dostępny.
+
+Sprawdź:
+1. aplikacja nadal się uruchamia,
+2. ekran ustawień działa,
+3. jest sekcja Powiadomienia,
+4. można sprawdzić status push,
+5. można kliknąć Włącz powiadomienia,
+6. jeśli przeglądarka nie obsługuje push, aplikacja pokazuje czytelny komunikat,
+7. subskrypcja zapisuje się przez Edge Function save-push-subscription,
+8. wyłączenie powiadomień wywołuje delete-push-subscription,
+9. send-push-notification nie wysyła powiadomień między różnymi household_id,
+10. RLS chroni push_subscriptions i push_notification_log,
+11. motyw Auto/Jasny/Ciemny nadal działa,
+12. język Polski/English nadal działa,
+13. szybka lista, sklepy, ceny i paragony nadal działają.
+
+Jeżeli prawdziwego push nie da się przetestować w Replit:
+- nie traktuj tego jako błąd krytyczny,
+- opisz, że pełny test wymaga HTTPS, service workera i poprawnych VAPID keys na produkcyjnej domenie,
+- sprawdź przynajmniej UI, zapis subskrypcji i brak błędów builda.
+
+Na końcu podsumuj po polsku:
+- czy patch został zastosowany,
+- jakie pliki zmieniono,
+- jakie migracje SQL dodano,
+- jakie Edge Functions dodano,
+- jakie zmienne środowiskowe trzeba ustawić,
+- czy TypeScript przeszedł,
+- czy build przeszedł,
+- czy lint przeszedł,
+- czy push wymaga testu na produkcyjnej domenie HTTPS,
+- co zostało jako TODO.

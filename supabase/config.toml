@@ -11,3 +11,12 @@ verify_jwt = false
 
 [functions.finalize-registration]
 verify_jwt = true
+
+[functions.save-push-subscription]
+verify_jwt = true
+
+[functions.delete-push-subscription]
+verify_jwt = true
+
+[functions.send-push-notification]
+verify_jwt = true
