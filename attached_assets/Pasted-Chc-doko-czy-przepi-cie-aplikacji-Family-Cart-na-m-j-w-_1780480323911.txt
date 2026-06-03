@@ -1,0 +1,270 @@
+Chcę dokończyć przepięcie aplikacji Family Cart na mój własny projekt Supabase.
+
+Nowy Supabase jest już podpięty przez sekrety Replit:
+
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+
+Zadanie:
+1. Zweryfikuj, czy aplikacja łączy się z moim nowym Supabase.
+2. Przygotuj i uruchom wszystkie tabele, migracje, RLS, helpery SQL i dane wymagane przez aplikację.
+3. Utwórz pierwszego użytkownika administracyjnego:
+   email: biuro@autosafe.immo
+   hasło tymczasowe: adminn
+4. Po utworzeniu użytkownika ustaw go jako owner/admin pierwszego domu/grupy.
+5. Wymuś zmianę hasła po pierwszym logowaniu, jeśli aplikacja obsługuje:
+   must_change_password = true
+   must_complete_profile = true
+
+WAŻNE:
+- Nie przebudowuj aplikacji od zera.
+- Nie zmieniaj brandingu:
+  Family Cart
+  Version: v26.06.03.1
+  Created by: AutoSafe
+- Nie usuwaj funkcji:
+  domy/grupy,
+  role,
+  szybka lista,
+  sklepy,
+  ceny,
+  paragony,
+  push,
+  motyw,
+  język,
+  WebP.
+- Nie zapisuj SUPABASE_SERVICE_ROLE_KEY w kodzie.
+- Nie commituj sekretów.
+- SUPABASE_SERVICE_ROLE_KEY może być użyty tylko po stronie serwera Replit albo przy operacjach administracyjnych.
+
+------------------------------------------------------------
+1. SPRAWDŹ POŁĄCZENIE Z NOWYM SUPABASE
+------------------------------------------------------------
+
+Sprawdź, czy aplikacja czyta:
+
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+
+Zweryfikuj, czy nie ma starego hardcoded Supabase URL albo starego klucza w kodzie.
+
+Jeśli znajdziesz stare wartości wpisane na sztywno, usuń je i użyj env.
+
+------------------------------------------------------------
+2. MIGRACJE / TABELE / RLS
+------------------------------------------------------------
+
+Sprawdź folder:
+
+supabase/migrations/
+
+Uruchom wszystkie migracje wymagane przez aplikację na nowym Supabase.
+
+Jeżeli nie możesz wykonać migracji automatycznie przez CLI, przygotuj jeden kompletny plik:
+
+all_migrations.sql
+
+albo użyj istniejącego:
+
+all_migrations.txt
+
+i upewnij się, że zawiera wszystkie migracje w prawidłowej kolejności.
+
+Nowa baza musi mieć minimum:
+
+- profiles
+- households
+- household_members
+- shopping_lists
+- shopping_items
+- categories / product dictionary, jeśli używane
+- stores
+- receipts
+- receipt_items
+- product_price_history
+- push_subscriptions
+- push_notification_log
+- registration_codes, jeśli używane
+- wszystkie helpery SQL do sprawdzania członkostwa i ról
+- wszystkie polityki RLS
+
+Sprawdź szczególnie:
+- czy household_members ma role owner/admin/member/viewer,
+- czy RLS izoluje dane po household_id,
+- czy owner/admin może zarządzać członkami,
+- czy zwykły użytkownik nie widzi cudzych domów.
+
+Jeżeli migracje są niekompletne albo występują konflikty, popraw je bez przebudowy całego modelu.
+
+------------------------------------------------------------
+3. UTWORZENIE PIERWSZEGO UŻYTKOWNIKA ADMIN
+------------------------------------------------------------
+
+Utwórz użytkownika w Supabase Auth:
+
+email:
+biuro@autosafe.immo
+
+hasło tymczasowe:
+adminn
+
+Jeżeli Supabase wymaga min. 6 znaków i hasło przechodzi — użyj tego hasła.
+Jeśli aplikacja ma wymuszać zmianę hasła po pierwszym logowaniu, ustaw:
+
+must_change_password = true
+must_complete_profile = true
+
+Jeżeli hasło „adminn” jest traktowane jako zbyt słabe albo Supabase je odrzuci, wygeneruj tymczasowe bezpieczniejsze hasło, ale napisz mi to w podsumowaniu.
+
+Nie zapisuj hasła w repo.
+Nie loguj hasła w konsoli.
+Nie commituj hasła.
+
+------------------------------------------------------------
+4. UTWORZENIE PIERWSZEGO DOMU / GRUPY
+------------------------------------------------------------
+
+Utwórz pierwszy dom/grupę, np.:
+
+AutoSafe
+
+albo:
+
+Biuro AutoSafe
+
+Następnie dodaj użytkownika:
+
+biuro@autosafe.immo
+
+do household_members jako:
+
+role = owner
+
+lub jeśli aplikacja wymaga admina:
+
+role = owner/admin zgodnie z aktualnym modelem.
+
+Ustaw ten dom jako aktywny dla użytkownika, jeśli aplikacja ma takie pole/mechanizm.
+
+------------------------------------------------------------
+5. REJESTRACJA I AUTH
+------------------------------------------------------------
+
+Sprawdź ustawienia Supabase Auth wymagane przez aplikację.
+
+Wypisz mi, co mam ustawić ręcznie w Supabase Dashboard:
+
+Authentication → Providers → Email:
+- Email provider ON
+- Confirm email ON/OFF — podaj rekomendację do testów
+
+Authentication → URL Configuration:
+- Site URL
+- Redirect URLs
+- callback/confirm-email, jeśli wymagane
+
+Jeżeli do testów lepiej tymczasowo wyłączyć potwierdzanie e-maila, napisz to jasno.
+
+------------------------------------------------------------
+6. DODAWANIE UŻYTKOWNIKÓW
+------------------------------------------------------------
+
+Sprawdź, czy po migracjach i utworzeniu admina działa dodawanie użytkownika do domu.
+
+Dodawanie użytkownika ma działać przez aktualną server function w Replit, nie przez stary Supabase Edge Function, jeśli tak zostało ostatnio przerobione.
+
+Sprawdź:
+- czy server function używa SUPABASE_SERVICE_ROLE_KEY tylko po stronie serwera,
+- czy sprawdza JWT,
+- czy sprawdza owner/admin,
+- czy nie ufa user_id z frontendu,
+- czy tworzy nowe konto tylko wtedy, gdy e-mail nie istnieje,
+- czy istniejący e-mail dodaje do household_members bez zmiany hasła.
+
+------------------------------------------------------------
+7. PUSH NOTIFICATIONS
+------------------------------------------------------------
+
+Sprawdź, czy tabele push istnieją:
+
+push_subscriptions
+push_notification_log
+
+Sprawdź, czy aplikacja nadal widzi:
+
+VITE_VAPID_PUBLIC_KEY
+
+Jeżeli push wymaga Edge Functions, wypisz które trzeba wdrożyć:
+
+save-push-subscription
+delete-push-subscription
+send-push-notification
+
+Sprawdź, czy w Replit/Supabase trzeba ustawić:
+
+VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY
+VAPID_SUBJECT
+
+Nie zapisuj sekretów w kodzie.
+
+------------------------------------------------------------
+8. TESTY
+------------------------------------------------------------
+
+Po wykonaniu konfiguracji uruchom:
+
+npm run build
+
+oraz jeśli dostępne:
+
+npm run lint
+npm run typecheck
+
+albo odpowiedniki z package.json.
+
+Przetestuj:
+
+1. Czy aplikacja startuje.
+2. Czy logowanie biuro@autosafe.immo działa.
+3. Czy użytkownik widzi dom/grupę AutoSafe.
+4. Czy użytkownik ma rolę owner/admin.
+5. Czy można dodać członka domu.
+6. Czy RLS nie blokuje własnych danych.
+7. Czy szybka lista nadal działa.
+8. Czy sklepy/ceny/paragony nadal działają.
+9. Czy ustawienia, motyw i język nadal działają.
+10. Czy push pokazuje poprawny status.
+
+------------------------------------------------------------
+9. GIT
+------------------------------------------------------------
+
+Jeżeli zmienisz kod albo migracje, wykonaj:
+
+git status
+git add .
+git commit -m "Configure own Supabase database and initial admin user setup"
+git push
+
+Jeżeli zmiany dotyczą tylko sekretów i danych w Supabase, nie commituj nic na siłę.
+
+------------------------------------------------------------
+10. PODSUMOWANIE
+------------------------------------------------------------
+
+Na końcu podsumuj po polsku:
+
+- czy aplikacja łączy się z moim Supabase,
+- czy migracje zostały uruchomione,
+- jakie tabele utworzono,
+- czy RLS jest aktywny,
+- czy utworzono użytkownika biuro@autosafe.immo,
+- czy utworzono dom/grupę AutoSafe,
+- czy użytkownik ma rolę owner/admin,
+- czy hasło jest tymczasowe i czy trzeba je zmienić po pierwszym logowaniu,
+- czy build przeszedł,
+- czy dodawanie członków powinno już działać,
+- co muszę jeszcze ręcznie ustawić w Supabase Dashboard.
