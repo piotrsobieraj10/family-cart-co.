@@ -1,0 +1,3 @@
+- [Supabase project setup](supabase-setup.md) — nowy projekt ixxjezsvcdctifcuinzf; env vars jako Replit Secrets; client.ts używa VITE_SUPABASE_ANON_KEY
+- [Secure registration trigger](secure-registration.md) — każdy nowy user wymaga wpisu w pending_registrations + registration_token w user_metadata; bez tego trigger blokuje tworzenie konta
+- [Server function for adding household users](household-server-fn.md) — addHouseholdUser w src/lib/api/household.functions.ts zastępuje Supabase Edge Function; czyta Authorization header przez getRequestHeader z @tanstack/start-server-core
