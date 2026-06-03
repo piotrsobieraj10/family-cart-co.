@@ -1,0 +1,247 @@
+Chcę tymczasowo uruchomić aplikację Family Cart na testowej bazie/danych w Replit, bez konieczności podpinania Supabase na tym etapie.
+
+Cel:
+Aplikacja ma działać testowo w Replit, żebym mógł sprawdzić:
+- logowanie,
+- dom AutoSafe,
+- dodawanie członków,
+- listy zakupów,
+- szybkie dodawanie produktów,
+- sklepy/ceny/paragony,
+- motyw,
+- język,
+- podstawowy UI.
+
+Na razie NIE walczymy z produkcyjnym Supabase.
+Nie przebudowuj aplikacji od zera.
+Nie usuwaj kodu Supabase — ma zostać na później.
+Dodaj tylko bezpieczny tryb testowy/deweloperski.
+
+Branding ma zostać:
+
+Family Cart
+Version: v26.06.03.1
+Created by: AutoSafe
+
+------------------------------------------------------------
+1. TRYB TESTOWY
+------------------------------------------------------------
+
+Dodaj tryb testowy sterowany zmienną:
+
+VITE_DATA_MODE=test
+
+albo:
+
+VITE_USE_TEST_DB=true
+
+W trybie testowym aplikacja nie ma wymagać poprawnego Supabase do podstawowego działania.
+
+Jeżeli tryb testowy jest włączony:
+- użyj lokalnych danych testowych,
+- możesz użyć localStorage albo prostego pliku/storage po stronie Replit,
+- nie wywołuj Supabase Auth przy logowaniu testowym,
+- nie wywołuj Supabase Edge Functions,
+- nie wymagaj SUPABASE_SERVICE_ROLE_KEY.
+
+Nie usuwaj istniejącego kodu Supabase.
+Po prostu dodaj warstwę adaptera danych:
+- test adapter,
+- supabase adapter.
+
+------------------------------------------------------------
+2. KONTO TESTOWE
+------------------------------------------------------------
+
+Dodaj konto testowe:
+
+email:
+biuro@autosafe.immo
+
+hasło:
+adminn
+
+Po zalogowaniu w trybie testowym użytkownik ma mieć:
+
+displayName:
+Biuro AutoSafe
+
+dom/grupa:
+AutoSafe
+
+rola:
+owner
+
+Jeśli aplikacja ma ekran uzupełnienia profilu, możesz:
+- albo go pokazać,
+- albo w trybie testowym uznać profil za uzupełniony.
+
+Najważniejsze: użytkownik po logowaniu ma wejść do aplikacji i widzieć dom AutoSafe.
+
+------------------------------------------------------------
+3. TESTOWE DANE
+------------------------------------------------------------
+
+Dodaj przykładowe dane testowe:
+
+Dom:
+AutoSafe
+
+Członkowie:
+- biuro@autosafe.immo — owner
+- test@autosafe.immo — member
+
+Lista zakupów:
+- Zakupy testowe
+
+Produkty:
+- mleko 2 szt — Nabiał
+- chleb — Pieczywo
+- banany 1 kg — Warzywa i owoce
+
+Sklepy:
+- Biedronka
+- Lidl
+
+Niech dane zapisują się w localStorage, żeby po odświeżeniu nie znikały.
+
+Dodaj opcję w ustawieniach:
+„Wyczyść dane testowe”
+
+------------------------------------------------------------
+4. DODAWANIE CZŁONKÓW W TRYBIE TESTOWYM
+------------------------------------------------------------
+
+W trybie testowym dodawanie członka domu ma działać lokalnie.
+
+Formularz:
+- email,
+- rola,
+- hasło tymczasowe opcjonalnie.
+
+Po kliknięciu „Dodaj”:
+- dodaj członka do testowego domu AutoSafe,
+- odśwież listę członków,
+- pokaż komunikat sukcesu.
+
+Obsłuż błędy:
+- brak e-maila,
+- zły format e-maila,
+- użytkownik już istnieje w domu.
+
+Nie wywołuj Supabase Edge Function w trybie testowym.
+
+------------------------------------------------------------
+5. LOGOWANIE W TRYBIE TESTOWYM
+------------------------------------------------------------
+
+W trybie testowym formularz logowania ma działać tak:
+
+Jeśli email = biuro@autosafe.immo i hasło = adminn:
+- zaloguj użytkownika testowego,
+- ustaw aktywny dom AutoSafe,
+- przejdź do aplikacji.
+
+Jeśli dane są inne:
+- pokaż komunikat:
+„Nieprawidłowy e-mail lub hasło w trybie testowym.”
+
+Nie może być sytuacji, że kliknięcie logowania nic nie robi.
+
+Dodaj diagnostykę bez sekretów:
+- [test-auth] login clicked
+- [test-auth] login success/error
+- [test-data] active household set
+
+------------------------------------------------------------
+6. SUPABASE MA ZOSTAĆ NA PÓŹNIEJ
+------------------------------------------------------------
+
+Nie usuwaj:
+- migracji Supabase,
+- funkcji Supabase,
+- klienta Supabase,
+- RLS,
+- kodu pod produkcyjną bazę.
+
+Aplikacja ma mieć docelowo dwa tryby:
+
+Tryb testowy:
+VITE_DATA_MODE=test
+
+Tryb produkcyjny:
+VITE_DATA_MODE=supabase
+
+W trybie produkcyjnym aplikacja działa jak dotychczas na Supabase.
+
+------------------------------------------------------------
+7. UI
+------------------------------------------------------------
+
+Jeśli tryb testowy jest aktywny, pokaż mały badge w ustawieniach albo stopce:
+
+Tryb testowy Replit
+
+Niech nie przeszkadza w aplikacji, ale ma być jasne, że to nie jest produkcyjna baza.
+
+------------------------------------------------------------
+8. PUSH
+------------------------------------------------------------
+
+Na razie push w trybie testowym może być wyłączony albo działać tylko jako symulacja.
+
+Jeśli VITE_DATA_MODE=test:
+- nie wymagaj VAPID keys,
+- przycisk „Wyślij testowe powiadomienie” może pokazać:
+„Tryb testowy — powiadomienie zostało zasymulowane.”
+
+Nie blokuj działania aplikacji przez brak push.
+
+------------------------------------------------------------
+9. TESTY
+------------------------------------------------------------
+
+Po zmianach uruchom:
+
+npm run build
+
+oraz jeśli dostępne:
+
+npm run lint
+npm run typecheck
+
+Sprawdź:
+1. Logowanie biuro@autosafe.immo / adminn działa.
+2. Kliknięcie przycisku logowania reaguje.
+3. Widać dom AutoSafe.
+4. Widać członków domu.
+5. Można dodać członka.
+6. Można dodać produkt.
+7. Szybka lista działa.
+8. Motyw i język działają.
+9. Push nie blokuje aplikacji.
+10. Po odświeżeniu dane testowe zostają.
+
+------------------------------------------------------------
+10. GIT
+------------------------------------------------------------
+
+Po poprawkach wykonaj:
+
+git status
+git add .
+git commit -m "Add Replit test data mode"
+git push
+
+------------------------------------------------------------
+11. PODSUMOWANIE
+------------------------------------------------------------
+
+Na końcu podsumuj po polsku:
+- czy dodano tryb testowy,
+- jaka zmienna go włącza,
+- jakie konto testowe działa,
+- gdzie zapisują się dane,
+- czy Supabase nadal zostaje na tryb produkcyjny,
+- czy build przeszedł,
+- czy commit/push został wykonany.

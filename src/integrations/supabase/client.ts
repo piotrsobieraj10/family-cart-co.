@@ -6,13 +6,14 @@ function createSupabaseClient() {
     (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
     process.env.VITE_SUPABASE_URL;
   const SUPABASE_ANON_KEY =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
-    process.env.VITE_SUPABASE_ANON_KEY;
+    (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_SUPABASE_ANON_KEY || import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY)) ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     const missing = [
       ...(!SUPABASE_URL ? ['VITE_SUPABASE_URL'] : []),
-      ...(!SUPABASE_ANON_KEY ? ['VITE_SUPABASE_ANON_KEY'] : []),
+      ...(!SUPABASE_ANON_KEY ? ['VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_PUBLISHABLE_KEY'] : []),
     ];
     const message = `Missing Supabase environment variable(s): ${missing.join(', ')}.`;
     console.error(`[Supabase] ${message}`);
