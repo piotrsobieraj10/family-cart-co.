@@ -1,0 +1,1566 @@
+-- Enums
+CREATE TYPE public.app_role AS ENUM ('admin', 'user');
+CREATE TYPE public.member_status AS ENUM ('active', 'invited', 'removed');
+CREATE TYPE public.list_status AS ENUM ('active', 'shopping', 'done', 'partially_done', 'archived');
+CREATE TYPE public.item_status AS ENUM ('active', 'bought', 'unavailable', 'deleted');
+
+-- updated_at trigger function
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- =========== profiles ===========
+CREATE TABLE public.profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  display_name TEXT,
+  email TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+GRANT ALL ON public.profiles TO service_role;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE TRIGGER trg_profiles_updated BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- auto-create profile on signup
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  INSERT INTO public.profiles (user_id, display_name, email)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1)),
+    NEW.email
+  );
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- =========== households ===========
+CREATE TABLE public.households (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.households TO authenticated;
+GRANT ALL ON public.households TO service_role;
+ALTER TABLE public.households ENABLE ROW LEVEL SECURITY;
+CREATE TRIGGER trg_households_updated BEFORE UPDATE ON public.households
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- =========== household_members ===========
+CREATE TABLE public.household_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role public.app_role NOT NULL DEFAULT 'user',
+  status public.member_status NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (household_id, user_id)
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.household_members TO authenticated;
+GRANT ALL ON public.household_members TO service_role;
+ALTER TABLE public.household_members ENABLE ROW LEVEL SECURITY;
+
+-- Security definer helpers (avoid recursion on household_members policies)
+CREATE OR REPLACE FUNCTION public.is_household_member(_user_id UUID, _household_id UUID)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.household_members
+    WHERE user_id = _user_id AND household_id = _household_id AND status = 'active'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_household_admin(_user_id UUID, _household_id UUID)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.household_members
+    WHERE user_id = _user_id AND household_id = _household_id
+      AND status = 'active' AND role = 'admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.user_household_ids(_user_id UUID)
+RETURNS SETOF UUID LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT household_id FROM public.household_members
+  WHERE user_id = _user_id AND status = 'active';
+$$;
+
+-- =========== shopping_lists ===========
+CREATE TABLE public.shopping_lists (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'Lista zakupów',
+  status public.list_status NOT NULL DEFAULT 'active',
+  created_by UUID NOT NULL REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.shopping_lists TO authenticated;
+GRANT ALL ON public.shopping_lists TO service_role;
+ALTER TABLE public.shopping_lists ENABLE ROW LEVEL SECURITY;
+CREATE TRIGGER trg_lists_updated BEFORE UPDATE ON public.shopping_lists
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE INDEX idx_lists_household ON public.shopping_lists(household_id);
+
+-- =========== shopping_items ===========
+CREATE TABLE public.shopping_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  list_id UUID NOT NULL REFERENCES public.shopping_lists(id) ON DELETE CASCADE,
+  household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  quantity NUMERIC,
+  unit TEXT,
+  category TEXT,
+  note TEXT,
+  status public.item_status NOT NULL DEFAULT 'active',
+  exact_match_required BOOLEAN NOT NULL DEFAULT false,
+  added_by UUID NOT NULL REFERENCES auth.users(id),
+  checked_by UUID REFERENCES auth.users(id),
+  checked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.shopping_items TO authenticated;
+GRANT ALL ON public.shopping_items TO service_role;
+ALTER TABLE public.shopping_items ENABLE ROW LEVEL SECURITY;
+CREATE TRIGGER trg_items_updated BEFORE UPDATE ON public.shopping_items
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE INDEX idx_items_list ON public.shopping_items(list_id);
+CREATE INDEX idx_items_household ON public.shopping_items(household_id);
+
+-- =========== item_photos ===========
+CREATE TABLE public.item_photos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id UUID NOT NULL REFERENCES public.shopping_items(id) ON DELETE CASCADE,
+  household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  thumbnail_url TEXT,
+  preview_url TEXT,
+  storage_path TEXT NOT NULL,
+  mime_type TEXT DEFAULT 'image/webp',
+  width INT,
+  height INT,
+  created_by UUID NOT NULL REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.item_photos TO authenticated;
+GRANT ALL ON public.item_photos TO service_role;
+ALTER TABLE public.item_photos ENABLE ROW LEVEL SECURITY;
+CREATE INDEX idx_photos_item ON public.item_photos(item_id);
+
+-- =========== activity_log ===========
+CREATE TABLE public.activity_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  list_id UUID REFERENCES public.shopping_lists(id) ON DELETE SET NULL,
+  item_id UUID REFERENCES public.shopping_items(id) ON DELETE SET NULL,
+  user_id UUID NOT NULL REFERENCES auth.users(id),
+  action TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT ON public.activity_log TO authenticated;
+GRANT ALL ON public.activity_log TO service_role;
+ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
+CREATE INDEX idx_activity_household ON public.activity_log(household_id, created_at DESC);
+
+-- =========== RLS POLICIES ===========
+
+-- profiles: users can read own + members of their households; update own
+CREATE POLICY "profile_self_read" ON public.profiles FOR SELECT TO authenticated
+  USING (user_id = auth.uid());
+CREATE POLICY "profile_household_read" ON public.profiles FOR SELECT TO authenticated
+  USING (EXISTS (
+    SELECT 1 FROM public.household_members hm1
+    JOIN public.household_members hm2 ON hm1.household_id = hm2.household_id
+    WHERE hm1.user_id = auth.uid() AND hm2.user_id = profiles.user_id
+      AND hm1.status = 'active' AND hm2.status = 'active'
+  ));
+CREATE POLICY "profile_self_update" ON public.profiles FOR UPDATE TO authenticated
+  USING (user_id = auth.uid());
+
+-- households: members can read; owner can update; authenticated can create
+CREATE POLICY "household_member_read" ON public.households FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), id) OR owner_id = auth.uid());
+CREATE POLICY "household_create" ON public.households FOR INSERT TO authenticated
+  WITH CHECK (owner_id = auth.uid());
+CREATE POLICY "household_owner_update" ON public.households FOR UPDATE TO authenticated
+  USING (owner_id = auth.uid() OR public.is_household_admin(auth.uid(), id));
+CREATE POLICY "household_owner_delete" ON public.households FOR DELETE TO authenticated
+  USING (owner_id = auth.uid());
+
+-- household_members: members of the household can read; admins can manage; user can read own membership
+CREATE POLICY "members_read" ON public.household_members FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "members_insert_self_or_admin" ON public.household_members FOR INSERT TO authenticated
+  WITH CHECK (
+    -- Self-insert as owner of the household
+    (user_id = auth.uid() AND EXISTS (
+      SELECT 1 FROM public.households h WHERE h.id = household_id AND h.owner_id = auth.uid()
+    ))
+    OR public.is_household_admin(auth.uid(), household_id)
+  );
+CREATE POLICY "members_update_admin" ON public.household_members FOR UPDATE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+CREATE POLICY "members_delete_admin_or_self" ON public.household_members FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id) OR user_id = auth.uid());
+
+-- shopping_lists
+CREATE POLICY "lists_member_read" ON public.shopping_lists FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "lists_member_insert" ON public.shopping_lists FOR INSERT TO authenticated
+  WITH CHECK (public.is_household_member(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "lists_member_update" ON public.shopping_lists FOR UPDATE TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "lists_admin_delete" ON public.shopping_lists FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+-- shopping_items
+CREATE POLICY "items_member_read" ON public.shopping_items FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "items_member_insert" ON public.shopping_items FOR INSERT TO authenticated
+  WITH CHECK (public.is_household_member(auth.uid(), household_id) AND added_by = auth.uid());
+CREATE POLICY "items_member_update" ON public.shopping_items FOR UPDATE TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "items_admin_delete" ON public.shopping_items FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+-- item_photos
+CREATE POLICY "photos_member_read" ON public.item_photos FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "photos_member_insert" ON public.item_photos FOR INSERT TO authenticated
+  WITH CHECK (public.is_household_member(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "photos_member_delete" ON public.item_photos FOR DELETE TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+
+-- activity_log
+CREATE POLICY "activity_member_read" ON public.activity_log FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "activity_member_insert" ON public.activity_log FOR INSERT TO authenticated
+  WITH CHECK (public.is_household_member(auth.uid(), household_id) AND user_id = auth.uid());
+
+-- =========== STORAGE BUCKET FOR PHOTOS ===========
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('product-photos', 'product-photos', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Storage policies: paths are {household_id}/{item_id}/{file}
+CREATE POLICY "photos_storage_read" ON storage.objects FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'product-photos'
+    AND public.is_household_member(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "photos_storage_insert" ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'product-photos'
+    AND public.is_household_member(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "photos_storage_delete" ON storage.objects FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'product-photos'
+    AND public.is_household_member(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+
+-- =========== REALTIME ===========
+ALTER PUBLICATION supabase_realtime ADD TABLE public.shopping_items;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.shopping_lists;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.item_photos;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_log;-- set search_path on trigger functions
+ALTER FUNCTION public.set_updated_at() SET search_path = public;
+ALTER FUNCTION public.handle_new_user() SET search_path = public;
+
+-- Trigger functions never need to be called by clients
+REVOKE EXECUTE ON FUNCTION public.set_updated_at() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+
+-- RLS helpers: revoke from anon (only authenticated RLS evaluation needs them)
+REVOKE EXECUTE ON FUNCTION public.is_household_member(uuid, uuid) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.is_household_admin(uuid, uuid) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.user_household_ids(uuid) FROM PUBLIC, anon;-- Multi-household accounts, role enforcement, onboarding flags and private photos.
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS first_name text,
+  ADD COLUMN IF NOT EXISTS last_name text,
+  ADD COLUMN IF NOT EXISTS must_complete_profile boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false;
+
+ALTER TABLE public.household_members
+  ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES auth.users(id),
+  ADD COLUMN IF NOT EXISTS label text;
+
+ALTER TYPE public.app_role RENAME TO app_role_old;
+CREATE TYPE public.app_role AS ENUM ('owner', 'admin', 'member', 'viewer');
+ALTER TABLE public.household_members ALTER COLUMN role DROP DEFAULT;
+ALTER TABLE public.household_members
+  ALTER COLUMN role TYPE public.app_role
+  USING (
+    CASE
+      WHEN role::text = 'user' THEN 'member'
+      ELSE role::text
+    END
+  )::public.app_role;
+ALTER TABLE public.household_members ALTER COLUMN role SET DEFAULT 'member';
+DROP TYPE public.app_role_old CASCADE;
+
+UPDATE public.household_members hm
+SET role = 'owner'
+FROM public.households h
+WHERE hm.household_id = h.id AND hm.user_id = h.owner_id;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  new_household_id uuid;
+  new_household_name text;
+BEGIN
+  INSERT INTO public.profiles (user_id, display_name, email)
+  VALUES (
+    NEW.id,
+    COALESCE(NULLIF(NEW.raw_user_meta_data->>'display_name', ''), split_part(NEW.email, '@', 1)),
+    NEW.email
+  )
+  ON CONFLICT (user_id) DO UPDATE SET email = EXCLUDED.email;
+
+  new_household_name := NULLIF(trim(NEW.raw_user_meta_data->>'household_name'), '');
+  IF new_household_name IS NOT NULL THEN
+    INSERT INTO public.households (name, owner_id)
+    VALUES (new_household_name, NEW.id)
+    RETURNING id INTO new_household_id;
+
+    INSERT INTO public.household_members (household_id, user_id, role, status, created_by)
+    VALUES (new_household_id, NEW.id, 'owner', 'active', NEW.id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_household_member(_user_id uuid, _household_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.household_members
+    WHERE user_id = _user_id
+      AND household_id = _household_id
+      AND status = 'active'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_household_admin(_user_id uuid, _household_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.household_members
+    WHERE user_id = _user_id
+      AND household_id = _household_id
+      AND status = 'active'
+      AND role IN ('owner', 'admin')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_add_household_items(_user_id uuid, _household_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.household_members
+    WHERE user_id = _user_id
+      AND household_id = _household_id
+      AND status = 'active'
+      AND role IN ('owner', 'admin', 'member')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.shares_household(_viewer_id uuid, _profile_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.household_members viewer
+    JOIN public.household_members target ON target.household_id = viewer.household_id
+    WHERE viewer.user_id = _viewer_id
+      AND target.user_id = _profile_user_id
+      AND viewer.status = 'active'
+      AND target.status = 'active'
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_household_member(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_household_admin(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_add_household_items(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.shares_household(uuid, uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.guard_profile_onboarding_flags()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.role() IS DISTINCT FROM 'service_role' AND (
+    NEW.must_complete_profile IS DISTINCT FROM OLD.must_complete_profile
+    OR NEW.must_change_password IS DISTINCT FROM OLD.must_change_password
+  ) THEN
+    RAISE EXCEPTION 'Onboarding flags can only be changed by the backend';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_profile_onboarding_flags ON public.profiles;
+CREATE TRIGGER trg_guard_profile_onboarding_flags
+BEFORE UPDATE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.guard_profile_onboarding_flags();
+
+CREATE OR REPLACE FUNCTION public.guard_household_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.role() IS DISTINCT FROM 'service_role' AND NEW.owner_id IS DISTINCT FROM OLD.owner_id THEN
+    RAISE EXCEPTION 'The household owner cannot be changed';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_household_owner ON public.households;
+CREATE TRIGGER trg_guard_household_owner
+BEFORE UPDATE ON public.households
+FOR EACH ROW EXECUTE FUNCTION public.guard_household_owner();
+
+CREATE OR REPLACE FUNCTION public.guard_household_member_changes()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  household_owner uuid;
+BEGIN
+  IF auth.role() = 'service_role' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  SELECT owner_id INTO household_owner
+  FROM public.households
+  WHERE id = COALESCE(NEW.household_id, OLD.household_id);
+
+  IF TG_OP = 'INSERT' AND NEW.role = 'owner' AND NEW.user_id <> household_owner THEN
+    RAISE EXCEPTION 'Only the household owner can have the owner role';
+  END IF;
+
+  IF TG_OP IN ('UPDATE', 'DELETE') AND OLD.user_id = household_owner THEN
+    RAISE EXCEPTION 'The household owner cannot be removed or demoted';
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND (
+    NEW.household_id IS DISTINCT FROM OLD.household_id
+    OR NEW.user_id IS DISTINCT FROM OLD.user_id
+  ) THEN
+    RAISE EXCEPTION 'A membership cannot be moved to another user or household';
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND NEW.role = 'owner' AND NEW.user_id <> household_owner THEN
+    RAISE EXCEPTION 'The owner role cannot be assigned';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_household_members ON public.household_members;
+CREATE TRIGGER trg_guard_household_members
+BEFORE INSERT OR UPDATE OR DELETE ON public.household_members
+FOR EACH ROW EXECUTE FUNCTION public.guard_household_member_changes();
+
+CREATE OR REPLACE FUNCTION public.guard_household_id_consistency()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'shopping_items' AND NOT EXISTS (
+    SELECT 1 FROM public.shopping_lists
+    WHERE id = NEW.list_id AND household_id = NEW.household_id
+  ) THEN
+    RAISE EXCEPTION 'List and item must belong to the same household';
+  END IF;
+
+  IF TG_TABLE_NAME = 'item_photos' AND NOT EXISTS (
+    SELECT 1 FROM public.shopping_items
+    WHERE id = NEW.item_id AND household_id = NEW.household_id
+  ) THEN
+    RAISE EXCEPTION 'Item and photo must belong to the same household';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_items_household_consistency ON public.shopping_items;
+CREATE TRIGGER trg_items_household_consistency
+BEFORE INSERT OR UPDATE ON public.shopping_items
+FOR EACH ROW EXECUTE FUNCTION public.guard_household_id_consistency();
+
+DROP TRIGGER IF EXISTS trg_photos_household_consistency ON public.item_photos;
+CREATE TRIGGER trg_photos_household_consistency
+BEFORE INSERT OR UPDATE ON public.item_photos
+FOR EACH ROW EXECUTE FUNCTION public.guard_household_id_consistency();
+
+CREATE OR REPLACE FUNCTION public.guard_member_item_updates()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.household_id IS DISTINCT FROM OLD.household_id
+    OR NEW.added_by IS DISTINCT FROM OLD.added_by
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Item ownership fields cannot be changed';
+  END IF;
+
+  IF auth.role() = 'service_role'
+    OR public.is_household_admin(auth.uid(), OLD.household_id)
+    OR OLD.added_by = auth.uid() THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.household_id IS DISTINCT FROM OLD.household_id
+    OR NEW.list_id IS DISTINCT FROM OLD.list_id
+    OR NEW.name IS DISTINCT FROM OLD.name
+    OR NEW.quantity IS DISTINCT FROM OLD.quantity
+    OR NEW.unit IS DISTINCT FROM OLD.unit
+    OR NEW.category IS DISTINCT FROM OLD.category
+    OR NEW.note IS DISTINCT FROM OLD.note
+    OR NEW.exact_match_required IS DISTINCT FROM OLD.exact_match_required
+    OR NEW.added_by IS DISTINCT FROM OLD.added_by
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Members can only change the status of products added by other users';
+  END IF;
+
+  IF NEW.status = 'deleted' THEN
+    RAISE EXCEPTION 'Members cannot delete products added by other users';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_member_item_updates ON public.shopping_items;
+CREATE TRIGGER trg_guard_member_item_updates
+BEFORE UPDATE ON public.shopping_items
+FOR EACH ROW EXECUTE FUNCTION public.guard_member_item_updates();
+
+CREATE TABLE IF NOT EXISTS public.household_product_dictionary (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  phrase text NOT NULL,
+  category text NOT NULL,
+  default_unit text,
+  created_by uuid NOT NULL REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (household_id, phrase)
+);
+ALTER TABLE public.household_product_dictionary ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.household_product_dictionary TO authenticated;
+GRANT ALL ON public.household_product_dictionary TO service_role;
+
+DROP POLICY IF EXISTS "profile_self_read" ON public.profiles;
+DROP POLICY IF EXISTS "profile_household_read" ON public.profiles;
+DROP POLICY IF EXISTS "profile_self_update" ON public.profiles;
+DROP POLICY IF EXISTS "household_member_read" ON public.households;
+DROP POLICY IF EXISTS "household_create" ON public.households;
+DROP POLICY IF EXISTS "household_owner_update" ON public.households;
+DROP POLICY IF EXISTS "household_owner_delete" ON public.households;
+DROP POLICY IF EXISTS "members_read" ON public.household_members;
+DROP POLICY IF EXISTS "members_insert_self_or_admin" ON public.household_members;
+DROP POLICY IF EXISTS "members_update_admin" ON public.household_members;
+DROP POLICY IF EXISTS "members_delete_admin_or_self" ON public.household_members;
+DROP POLICY IF EXISTS "lists_member_read" ON public.shopping_lists;
+DROP POLICY IF EXISTS "lists_member_insert" ON public.shopping_lists;
+DROP POLICY IF EXISTS "lists_member_update" ON public.shopping_lists;
+DROP POLICY IF EXISTS "lists_admin_delete" ON public.shopping_lists;
+DROP POLICY IF EXISTS "items_member_read" ON public.shopping_items;
+DROP POLICY IF EXISTS "items_member_insert" ON public.shopping_items;
+DROP POLICY IF EXISTS "items_member_update" ON public.shopping_items;
+DROP POLICY IF EXISTS "items_admin_delete" ON public.shopping_items;
+DROP POLICY IF EXISTS "photos_member_read" ON public.item_photos;
+DROP POLICY IF EXISTS "photos_member_insert" ON public.item_photos;
+DROP POLICY IF EXISTS "photos_member_delete" ON public.item_photos;
+DROP POLICY IF EXISTS "activity_member_read" ON public.activity_log;
+DROP POLICY IF EXISTS "activity_member_insert" ON public.activity_log;
+
+CREATE POLICY "profile_self_read" ON public.profiles FOR SELECT TO authenticated
+  USING (user_id = auth.uid());
+CREATE POLICY "profile_household_read" ON public.profiles FOR SELECT TO authenticated
+  USING (public.shares_household(auth.uid(), user_id));
+CREATE POLICY "profile_self_update" ON public.profiles FOR UPDATE TO authenticated
+  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "household_member_read" ON public.households FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), id) OR owner_id = auth.uid());
+CREATE POLICY "household_create" ON public.households FOR INSERT TO authenticated
+  WITH CHECK (owner_id = auth.uid());
+CREATE POLICY "household_admin_update" ON public.households FOR UPDATE TO authenticated
+  USING (public.is_household_admin(auth.uid(), id))
+  WITH CHECK (public.is_household_admin(auth.uid(), id));
+CREATE POLICY "household_owner_delete" ON public.households FOR DELETE TO authenticated
+  USING (owner_id = auth.uid());
+
+CREATE POLICY "members_read" ON public.household_members FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "members_owner_self_insert" ON public.household_members FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = auth.uid()
+    AND role = 'owner'
+    AND EXISTS (SELECT 1 FROM public.households h WHERE h.id = household_id AND h.owner_id = auth.uid())
+  );
+CREATE POLICY "members_admin_update" ON public.household_members FOR UPDATE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id))
+  WITH CHECK (public.is_household_admin(auth.uid(), household_id));
+CREATE POLICY "members_admin_delete" ON public.household_members FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "lists_member_read" ON public.shopping_lists FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "lists_contributor_insert" ON public.shopping_lists FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "lists_admin_update" ON public.shopping_lists FOR UPDATE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id))
+  WITH CHECK (public.is_household_admin(auth.uid(), household_id));
+CREATE POLICY "lists_admin_delete" ON public.shopping_lists FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "items_member_read" ON public.shopping_items FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "items_contributor_insert" ON public.shopping_items FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND added_by = auth.uid());
+CREATE POLICY "items_contributor_update" ON public.shopping_items FOR UPDATE TO authenticated
+  USING (public.can_add_household_items(auth.uid(), household_id))
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id));
+CREATE POLICY "items_admin_delete" ON public.shopping_items FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "photos_member_read" ON public.item_photos FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "photos_contributor_insert" ON public.item_photos FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "photos_owner_or_admin_delete" ON public.item_photos FOR DELETE TO authenticated
+  USING (created_by = auth.uid() OR public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "activity_member_read" ON public.activity_log FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "activity_contributor_insert" ON public.activity_log FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND user_id = auth.uid());
+
+CREATE POLICY "dictionary_member_read" ON public.household_product_dictionary FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "dictionary_contributor_insert" ON public.household_product_dictionary FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "dictionary_contributor_update" ON public.household_product_dictionary FOR UPDATE TO authenticated
+  USING (public.can_add_household_items(auth.uid(), household_id))
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id));
+CREATE POLICY "dictionary_admin_delete" ON public.household_product_dictionary FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+UPDATE storage.buckets SET public = false WHERE id = 'product-photos';
+DROP POLICY IF EXISTS "photos_storage_read" ON storage.objects;
+DROP POLICY IF EXISTS "photos_storage_insert" ON storage.objects;
+DROP POLICY IF EXISTS "photos_storage_delete" ON storage.objects;
+DROP POLICY IF EXISTS "photos_storage_update" ON storage.objects;
+
+CREATE POLICY "photos_storage_read" ON storage.objects FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'product-photos'
+    AND public.is_household_member(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "photos_storage_insert" ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'product-photos'
+    AND public.can_add_household_items(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "photos_storage_update" ON storage.objects FOR UPDATE TO authenticated
+  USING (
+    bucket_id = 'product-photos'
+    AND public.can_add_household_items(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "photos_storage_delete" ON storage.objects FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'product-photos'
+    AND public.can_add_household_items(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+
+REVOKE EXECUTE ON FUNCTION public.guard_household_member_changes() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.guard_household_id_consistency() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.guard_member_item_updates() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.guard_household_owner() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.guard_profile_onboarding_flags() FROM PUBLIC, anon, authenticated;
+-- Secure self-registration with email confirmation and backend-enforced modes.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+CREATE TABLE IF NOT EXISTS public.registration_codes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code_hash text NOT NULL UNIQUE,
+  label text,
+  active boolean NOT NULL DEFAULT true,
+  max_uses integer,
+  used_count integer NOT NULL DEFAULT 0,
+  expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (max_uses IS NULL OR max_uses > 0),
+  CHECK (used_count >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS public.pending_registrations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  token_hash text NOT NULL UNIQUE,
+  email text NOT NULL,
+  first_name text,
+  pending_household_name text,
+  registration_source text NOT NULL CHECK (registration_source IN ('self_signup', 'admin_created')),
+  code_id uuid REFERENCES public.registration_codes(id) ON DELETE SET NULL,
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '7 days'),
+  consumed_at timestamptz,
+  household_created_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_registrations_email
+  ON public.pending_registrations (lower(email));
+
+ALTER TABLE public.registration_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pending_registrations ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON public.registration_codes FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.pending_registrations FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.registration_codes TO service_role;
+GRANT ALL ON public.pending_registrations TO service_role;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  registration_token text;
+  registration_token_hash text;
+  registration_source_value text;
+  pending public.pending_registrations%ROWTYPE;
+BEGIN
+  registration_token := NULLIF(NEW.raw_user_meta_data->>'registration_token', '');
+  registration_source_value := NULLIF(NEW.raw_user_meta_data->>'registration_source', '');
+
+  IF registration_token IS NULL OR registration_source_value IS NULL THEN
+    RAISE EXCEPTION 'Registration must be started through the application backend';
+  END IF;
+
+  registration_token_hash := encode(extensions.digest(registration_token, 'sha256'), 'hex');
+
+  SELECT *
+  INTO pending
+  FROM public.pending_registrations
+  WHERE token_hash = registration_token_hash
+    AND lower(email) = lower(NEW.email)
+    AND registration_source = registration_source_value
+    AND consumed_at IS NULL
+    AND expires_at > now()
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Invalid or expired registration token';
+  END IF;
+
+  INSERT INTO public.profiles (user_id, display_name, email, first_name)
+  VALUES (
+    NEW.id,
+    COALESCE(
+      NULLIF(NEW.raw_user_meta_data->>'display_name', ''),
+      NULLIF(pending.first_name, ''),
+      split_part(NEW.email, '@', 1)
+    ),
+    NEW.email,
+    NULLIF(pending.first_name, '')
+  )
+  ON CONFLICT (user_id) DO UPDATE
+  SET email = EXCLUDED.email;
+
+  UPDATE public.pending_registrations
+  SET consumed_at = now()
+  WHERE id = pending.id;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_email_confirmed(_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM auth.users
+    WHERE id = _user_id
+      AND email_confirmed_at IS NOT NULL
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_household_member(_user_id uuid, _household_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT public.is_email_confirmed(_user_id) AND EXISTS (
+    SELECT 1
+    FROM public.household_members
+    WHERE user_id = _user_id
+      AND household_id = _household_id
+      AND status = 'active'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_household_admin(_user_id uuid, _household_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT public.is_email_confirmed(_user_id) AND EXISTS (
+    SELECT 1
+    FROM public.household_members
+    WHERE user_id = _user_id
+      AND household_id = _household_id
+      AND status = 'active'
+      AND role IN ('owner', 'admin')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_add_household_items(_user_id uuid, _household_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT public.is_email_confirmed(_user_id) AND EXISTS (
+    SELECT 1
+    FROM public.household_members
+    WHERE user_id = _user_id
+      AND household_id = _household_id
+      AND status = 'active'
+      AND role IN ('owner', 'admin', 'member')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.user_household_ids(_user_id uuid)
+RETURNS SETOF uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT household_id
+  FROM public.household_members
+  WHERE user_id = _user_id
+    AND status = 'active'
+    AND public.is_email_confirmed(_user_id);
+$$;
+
+CREATE OR REPLACE FUNCTION public.finalize_self_registration(_user_id uuid, _token_hash text)
+RETURNS TABLE (household_id uuid, household_name text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  auth_email text;
+  pending public.pending_registrations%ROWTYPE;
+  new_household_id uuid;
+BEGIN
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'This function can only be called by the backend';
+  END IF;
+
+  SELECT email
+  INTO auth_email
+  FROM auth.users
+  WHERE id = _user_id
+    AND email_confirmed_at IS NOT NULL;
+
+  IF auth_email IS NULL THEN
+    RAISE EXCEPTION 'email_not_confirmed';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.household_members
+    WHERE user_id = _user_id
+      AND status = 'active'
+  ) THEN
+    RETURN;
+  END IF;
+
+  SELECT *
+  INTO pending
+  FROM public.pending_registrations
+  WHERE token_hash = _token_hash
+    AND lower(email) = lower(auth_email)
+    AND registration_source = 'self_signup'
+    AND consumed_at IS NOT NULL
+    AND household_created_at IS NULL
+  FOR UPDATE;
+
+  IF NOT FOUND OR NULLIF(trim(pending.pending_household_name), '') IS NULL THEN
+    RAISE EXCEPTION 'pending_registration_not_found';
+  END IF;
+
+  INSERT INTO public.households (name, owner_id)
+  VALUES (trim(pending.pending_household_name), _user_id)
+  RETURNING id INTO new_household_id;
+
+  INSERT INTO public.household_members (household_id, user_id, role, status, created_by)
+  VALUES (new_household_id, _user_id, 'owner', 'active', _user_id);
+
+  UPDATE public.pending_registrations
+  SET household_created_at = now()
+  WHERE id = pending.id;
+
+  RETURN QUERY SELECT new_household_id, trim(pending.pending_household_name);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_email_confirmed(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.finalize_self_registration(uuid, text) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.finalize_self_registration(uuid, text) FROM PUBLIC, anon, authenticated;
+
+DROP POLICY IF EXISTS "household_member_read" ON public.households;
+DROP POLICY IF EXISTS "household_create" ON public.households;
+
+CREATE POLICY "household_member_read" ON public.households FOR SELECT TO authenticated
+  USING (
+    public.is_household_member(auth.uid(), id)
+    OR (owner_id = auth.uid() AND public.is_email_confirmed(auth.uid()))
+  );
+
+CREATE POLICY "household_create" ON public.households FOR INSERT TO authenticated
+  WITH CHECK (owner_id = auth.uid() AND public.is_email_confirmed(auth.uid()));
+
+REVOKE EXECUTE ON FUNCTION public.is_email_confirmed(uuid) FROM PUBLIC, anon;
+-- Stores, household product memory, price history, receipts and future convenience modules.
+
+CREATE OR REPLACE FUNCTION public.normalize_household_phrase(_value text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT trim(regexp_replace(lower(COALESCE(_value, '')), '[^[:alnum:]]+', ' ', 'g'));
+$$;
+
+ALTER TABLE public.household_product_dictionary
+  ADD COLUMN IF NOT EXISTS normalized_phrase text,
+  ADD COLUMN IF NOT EXISTS default_store_id uuid,
+  ADD COLUMN IF NOT EXISTS barcode text,
+  ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES auth.users(id),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE public.household_product_dictionary
+  ALTER COLUMN category DROP NOT NULL;
+
+UPDATE public.household_product_dictionary
+SET normalized_phrase = public.normalize_household_phrase(phrase)
+WHERE normalized_phrase IS NULL OR normalized_phrase = '';
+
+DELETE FROM public.household_product_dictionary dictionary
+USING public.household_product_dictionary duplicate
+WHERE dictionary.household_id = duplicate.household_id
+  AND dictionary.normalized_phrase = duplicate.normalized_phrase
+  AND dictionary.id > duplicate.id;
+
+ALTER TABLE public.household_product_dictionary
+  ALTER COLUMN normalized_phrase SET NOT NULL;
+
+ALTER TABLE public.household_product_dictionary
+  DROP CONSTRAINT IF EXISTS household_product_dictionary_household_id_phrase_key;
+CREATE UNIQUE INDEX IF NOT EXISTS household_product_dictionary_household_phrase_key
+  ON public.household_product_dictionary (household_id, normalized_phrase);
+CREATE INDEX IF NOT EXISTS idx_dictionary_household_barcode
+  ON public.household_product_dictionary (household_id, barcode)
+  WHERE barcode IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.stores (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  normalized_name text NOT NULL,
+  created_by uuid NOT NULL REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (household_id, normalized_name)
+);
+
+ALTER TABLE public.household_product_dictionary
+  DROP CONSTRAINT IF EXISTS household_product_dictionary_default_store_id_fkey;
+ALTER TABLE public.household_product_dictionary
+  ADD CONSTRAINT household_product_dictionary_default_store_id_fkey
+  FOREIGN KEY (default_store_id) REFERENCES public.stores(id) ON DELETE SET NULL;
+
+ALTER TABLE public.shopping_lists
+  ADD COLUMN IF NOT EXISTS default_store_id uuid REFERENCES public.stores(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS budget_amount numeric,
+  ADD COLUMN IF NOT EXISTS estimated_total numeric,
+  ADD COLUMN IF NOT EXISTS actual_total numeric;
+
+ALTER TABLE public.shopping_items
+  ADD COLUMN IF NOT EXISTS store_id uuid REFERENCES public.stores(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS estimated_unit_price numeric,
+  ADD COLUMN IF NOT EXISTS price_observed_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS public.receipts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  store_id uuid REFERENCES public.stores(id) ON DELETE SET NULL,
+  receipt_date date,
+  image_url text,
+  total_amount numeric,
+  ocr_status text NOT NULL DEFAULT 'pending'
+    CHECK (ocr_status IN ('pending', 'awaiting_review', 'confirmed', 'failed')),
+  ocr_error text,
+  created_by uuid NOT NULL REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.receipt_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  receipt_id uuid NOT NULL REFERENCES public.receipts(id) ON DELETE CASCADE,
+  store_id uuid REFERENCES public.stores(id) ON DELETE SET NULL,
+  raw_name text NOT NULL,
+  normalized_name text,
+  matched_product_name text,
+  quantity numeric,
+  unit text,
+  unit_price numeric,
+  total_price numeric,
+  category text,
+  confidence numeric,
+  confirmed_by_user boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.product_price_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  store_id uuid NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
+  product_name text NOT NULL,
+  normalized_product_name text NOT NULL,
+  category text,
+  price numeric NOT NULL CHECK (price >= 0),
+  unit text,
+  source_receipt_item_id uuid REFERENCES public.receipt_items(id) ON DELETE SET NULL,
+  observed_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid NOT NULL REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.pantry_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  normalized_name text NOT NULL,
+  quantity numeric,
+  unit text,
+  location text,
+  expiry_date date,
+  note text,
+  created_by uuid NOT NULL REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.recurring_products (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  product_name text NOT NULL,
+  normalized_product_name text NOT NULL,
+  category text,
+  quantity numeric,
+  unit text,
+  interval_days integer NOT NULL CHECK (interval_days > 0),
+  next_due_date date,
+  active boolean NOT NULL DEFAULT true,
+  created_by uuid NOT NULL REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.shopping_list_notes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  list_id uuid NOT NULL REFERENCES public.shopping_lists(id) ON DELETE CASCADE,
+  body text NOT NULL,
+  created_by uuid NOT NULL REFERENCES auth.users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stores_household ON public.stores(household_id, name);
+CREATE INDEX IF NOT EXISTS idx_receipts_household ON public.receipts(household_id, receipt_date DESC);
+CREATE INDEX IF NOT EXISTS idx_receipt_items_receipt ON public.receipt_items(receipt_id);
+CREATE INDEX IF NOT EXISTS idx_price_history_lookup
+  ON public.product_price_history(household_id, store_id, normalized_product_name, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pantry_household ON public.pantry_items(household_id, normalized_name);
+CREATE INDEX IF NOT EXISTS idx_recurring_household ON public.recurring_products(household_id, next_due_date);
+CREATE INDEX IF NOT EXISTS idx_list_notes_list ON public.shopping_list_notes(list_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.set_normalized_household_fields()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'stores' THEN
+    NEW.normalized_name := public.normalize_household_phrase(NEW.name);
+  ELSIF TG_TABLE_NAME = 'household_product_dictionary' THEN
+    NEW.normalized_phrase := public.normalize_household_phrase(NEW.phrase);
+  ELSIF TG_TABLE_NAME = 'receipt_items' THEN
+    NEW.normalized_name := public.normalize_household_phrase(NEW.raw_name);
+  ELSIF TG_TABLE_NAME = 'product_price_history' THEN
+    NEW.normalized_product_name := public.normalize_household_phrase(NEW.product_name);
+  ELSIF TG_TABLE_NAME = 'pantry_items' THEN
+    NEW.normalized_name := public.normalize_household_phrase(NEW.name);
+  ELSIF TG_TABLE_NAME = 'recurring_products' THEN
+    NEW.normalized_product_name := public.normalize_household_phrase(NEW.product_name);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.guard_convenience_household_consistency()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF TG_TABLE_NAME IN ('shopping_items', 'receipts', 'receipt_items', 'product_price_history') THEN
+    IF NEW.store_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM public.stores
+      WHERE id = NEW.store_id AND household_id = NEW.household_id
+    ) THEN
+      RAISE EXCEPTION 'Store must belong to the same household';
+    END IF;
+  END IF;
+
+  IF TG_TABLE_NAME = 'shopping_lists' THEN
+    IF NEW.default_store_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM public.stores
+      WHERE id = NEW.default_store_id AND household_id = NEW.household_id
+    ) THEN
+      RAISE EXCEPTION 'Default store must belong to the same household';
+    END IF;
+  END IF;
+
+  IF TG_TABLE_NAME = 'receipt_items' AND NOT EXISTS (
+    SELECT 1 FROM public.receipts
+    WHERE id = NEW.receipt_id AND household_id = NEW.household_id
+  ) THEN
+    RAISE EXCEPTION 'Receipt item must belong to the same household as receipt';
+  END IF;
+
+  IF TG_TABLE_NAME = 'shopping_list_notes' AND NOT EXISTS (
+    SELECT 1 FROM public.shopping_lists
+    WHERE id = NEW.list_id AND household_id = NEW.household_id
+  ) THEN
+    RAISE EXCEPTION 'List note must belong to the same household as list';
+  END IF;
+
+  IF TG_TABLE_NAME = 'household_product_dictionary' AND NEW.default_store_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.stores
+    WHERE id = NEW.default_store_id AND household_id = NEW.household_id
+  ) THEN
+    RAISE EXCEPTION 'Dictionary store must belong to the same household';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_stores_normalized ON public.stores;
+CREATE TRIGGER trg_stores_normalized
+BEFORE INSERT OR UPDATE ON public.stores
+FOR EACH ROW EXECUTE FUNCTION public.set_normalized_household_fields();
+
+DROP TRIGGER IF EXISTS trg_dictionary_normalized ON public.household_product_dictionary;
+CREATE TRIGGER trg_dictionary_normalized
+BEFORE INSERT OR UPDATE ON public.household_product_dictionary
+FOR EACH ROW EXECUTE FUNCTION public.set_normalized_household_fields();
+
+DROP TRIGGER IF EXISTS trg_receipt_items_normalized ON public.receipt_items;
+CREATE TRIGGER trg_receipt_items_normalized
+BEFORE INSERT OR UPDATE ON public.receipt_items
+FOR EACH ROW EXECUTE FUNCTION public.set_normalized_household_fields();
+
+DROP TRIGGER IF EXISTS trg_price_history_normalized ON public.product_price_history;
+CREATE TRIGGER trg_price_history_normalized
+BEFORE INSERT OR UPDATE ON public.product_price_history
+FOR EACH ROW EXECUTE FUNCTION public.set_normalized_household_fields();
+
+DROP TRIGGER IF EXISTS trg_pantry_items_normalized ON public.pantry_items;
+CREATE TRIGGER trg_pantry_items_normalized
+BEFORE INSERT OR UPDATE ON public.pantry_items
+FOR EACH ROW EXECUTE FUNCTION public.set_normalized_household_fields();
+
+DROP TRIGGER IF EXISTS trg_recurring_products_normalized ON public.recurring_products;
+CREATE TRIGGER trg_recurring_products_normalized
+BEFORE INSERT OR UPDATE ON public.recurring_products
+FOR EACH ROW EXECUTE FUNCTION public.set_normalized_household_fields();
+
+DROP TRIGGER IF EXISTS trg_receipts_consistency ON public.receipts;
+CREATE TRIGGER trg_receipts_consistency
+BEFORE INSERT OR UPDATE ON public.receipts
+FOR EACH ROW EXECUTE FUNCTION public.guard_convenience_household_consistency();
+
+DROP TRIGGER IF EXISTS trg_lists_store_consistency ON public.shopping_lists;
+CREATE TRIGGER trg_lists_store_consistency
+BEFORE INSERT OR UPDATE ON public.shopping_lists
+FOR EACH ROW EXECUTE FUNCTION public.guard_convenience_household_consistency();
+
+DROP TRIGGER IF EXISTS trg_items_store_consistency ON public.shopping_items;
+CREATE TRIGGER trg_items_store_consistency
+BEFORE INSERT OR UPDATE ON public.shopping_items
+FOR EACH ROW EXECUTE FUNCTION public.guard_convenience_household_consistency();
+
+DROP TRIGGER IF EXISTS trg_receipt_items_consistency ON public.receipt_items;
+CREATE TRIGGER trg_receipt_items_consistency
+BEFORE INSERT OR UPDATE ON public.receipt_items
+FOR EACH ROW EXECUTE FUNCTION public.guard_convenience_household_consistency();
+
+DROP TRIGGER IF EXISTS trg_price_history_consistency ON public.product_price_history;
+CREATE TRIGGER trg_price_history_consistency
+BEFORE INSERT OR UPDATE ON public.product_price_history
+FOR EACH ROW EXECUTE FUNCTION public.guard_convenience_household_consistency();
+
+DROP TRIGGER IF EXISTS trg_list_notes_consistency ON public.shopping_list_notes;
+CREATE TRIGGER trg_list_notes_consistency
+BEFORE INSERT OR UPDATE ON public.shopping_list_notes
+FOR EACH ROW EXECUTE FUNCTION public.guard_convenience_household_consistency();
+
+DROP TRIGGER IF EXISTS trg_dictionary_store_consistency ON public.household_product_dictionary;
+CREATE TRIGGER trg_dictionary_store_consistency
+BEFORE INSERT OR UPDATE ON public.household_product_dictionary
+FOR EACH ROW EXECUTE FUNCTION public.guard_convenience_household_consistency();
+
+DROP TRIGGER IF EXISTS trg_stores_updated ON public.stores;
+CREATE TRIGGER trg_stores_updated BEFORE UPDATE ON public.stores
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+DROP TRIGGER IF EXISTS trg_receipts_updated ON public.receipts;
+CREATE TRIGGER trg_receipts_updated BEFORE UPDATE ON public.receipts
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+DROP TRIGGER IF EXISTS trg_pantry_items_updated ON public.pantry_items;
+CREATE TRIGGER trg_pantry_items_updated BEFORE UPDATE ON public.pantry_items
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+DROP TRIGGER IF EXISTS trg_recurring_products_updated ON public.recurring_products;
+CREATE TRIGGER trg_recurring_products_updated BEFORE UPDATE ON public.recurring_products
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+DROP TRIGGER IF EXISTS trg_dictionary_updated ON public.household_product_dictionary;
+CREATE TRIGGER trg_dictionary_updated BEFORE UPDATE ON public.household_product_dictionary
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.guard_member_item_updates()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.household_id IS DISTINCT FROM OLD.household_id
+    OR NEW.added_by IS DISTINCT FROM OLD.added_by
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Item ownership fields cannot be changed';
+  END IF;
+
+  IF auth.role() = 'service_role'
+    OR public.is_household_admin(auth.uid(), OLD.household_id)
+    OR OLD.added_by = auth.uid() THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.household_id IS DISTINCT FROM OLD.household_id
+    OR NEW.list_id IS DISTINCT FROM OLD.list_id
+    OR NEW.name IS DISTINCT FROM OLD.name
+    OR NEW.quantity IS DISTINCT FROM OLD.quantity
+    OR NEW.unit IS DISTINCT FROM OLD.unit
+    OR NEW.category IS DISTINCT FROM OLD.category
+    OR NEW.note IS DISTINCT FROM OLD.note
+    OR NEW.exact_match_required IS DISTINCT FROM OLD.exact_match_required
+    OR NEW.store_id IS DISTINCT FROM OLD.store_id
+    OR NEW.estimated_unit_price IS DISTINCT FROM OLD.estimated_unit_price
+    OR NEW.price_observed_at IS DISTINCT FROM OLD.price_observed_at
+    OR NEW.added_by IS DISTINCT FROM OLD.added_by
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Members can only change the status of products added by other users';
+  END IF;
+
+  IF NEW.status = 'deleted' THEN
+    RAISE EXCEPTION 'Members cannot delete products added by other users';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+ALTER TABLE public.stores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.receipt_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_price_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pantry_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recurring_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.shopping_list_notes ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.stores TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.receipts TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.receipt_items TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.product_price_history TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.pantry_items TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.recurring_products TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.shopping_list_notes TO authenticated;
+GRANT ALL ON public.stores, public.receipts, public.receipt_items, public.product_price_history,
+  public.pantry_items, public.recurring_products, public.shopping_list_notes TO service_role;
+
+CREATE POLICY "stores_member_read" ON public.stores FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "stores_admin_insert" ON public.stores FOR INSERT TO authenticated
+  WITH CHECK (public.is_household_admin(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "stores_admin_update" ON public.stores FOR UPDATE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id))
+  WITH CHECK (public.is_household_admin(auth.uid(), household_id));
+CREATE POLICY "stores_admin_delete" ON public.stores FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "receipts_member_read" ON public.receipts FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "receipts_contributor_insert" ON public.receipts FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "receipts_owner_or_admin_update" ON public.receipts FOR UPDATE TO authenticated
+  USING (created_by = auth.uid() OR public.is_household_admin(auth.uid(), household_id))
+  WITH CHECK (created_by = auth.uid() OR public.is_household_admin(auth.uid(), household_id));
+CREATE POLICY "receipts_owner_or_admin_delete" ON public.receipts FOR DELETE TO authenticated
+  USING (created_by = auth.uid() OR public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "receipt_items_member_read" ON public.receipt_items FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "receipt_items_contributor_insert" ON public.receipt_items FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id));
+CREATE POLICY "receipt_items_contributor_update" ON public.receipt_items FOR UPDATE TO authenticated
+  USING (public.can_add_household_items(auth.uid(), household_id))
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id));
+CREATE POLICY "receipt_items_admin_delete" ON public.receipt_items FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "price_history_member_read" ON public.product_price_history FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "price_history_contributor_insert" ON public.product_price_history FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "price_history_admin_delete" ON public.product_price_history FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "pantry_member_read" ON public.pantry_items FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "pantry_contributor_insert" ON public.pantry_items FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "pantry_contributor_update" ON public.pantry_items FOR UPDATE TO authenticated
+  USING (public.can_add_household_items(auth.uid(), household_id))
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id));
+CREATE POLICY "pantry_admin_delete" ON public.pantry_items FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "recurring_member_read" ON public.recurring_products FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "recurring_contributor_insert" ON public.recurring_products FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "recurring_contributor_update" ON public.recurring_products FOR UPDATE TO authenticated
+  USING (public.can_add_household_items(auth.uid(), household_id))
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id));
+CREATE POLICY "recurring_admin_delete" ON public.recurring_products FOR DELETE TO authenticated
+  USING (public.is_household_admin(auth.uid(), household_id));
+
+CREATE POLICY "list_notes_member_read" ON public.shopping_list_notes FOR SELECT TO authenticated
+  USING (public.is_household_member(auth.uid(), household_id));
+CREATE POLICY "list_notes_contributor_insert" ON public.shopping_list_notes FOR INSERT TO authenticated
+  WITH CHECK (public.can_add_household_items(auth.uid(), household_id) AND created_by = auth.uid());
+CREATE POLICY "list_notes_owner_or_admin_delete" ON public.shopping_list_notes FOR DELETE TO authenticated
+  USING (created_by = auth.uid() OR public.is_household_admin(auth.uid(), household_id));
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('receipt-images', 'receipt-images', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
+
+CREATE POLICY "receipt_images_storage_read" ON storage.objects FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'receipt-images'
+    AND public.is_household_member(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "receipt_images_storage_insert" ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'receipt-images'
+    AND public.can_add_household_items(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "receipt_images_storage_update" ON storage.objects FOR UPDATE TO authenticated
+  USING (
+    bucket_id = 'receipt-images'
+    AND public.can_add_household_items(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+CREATE POLICY "receipt_images_storage_delete" ON storage.objects FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'receipt-images'
+    AND public.can_add_household_items(auth.uid(), ((storage.foldername(name))[1])::uuid)
+  );
+
+REVOKE EXECUTE ON FUNCTION public.normalize_household_phrase(text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.set_normalized_household_fields() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.guard_convenience_household_consistency() FROM PUBLIC, anon, authenticated;
+-- Push notifications for Family Cart PWA.
+
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  endpoint text NOT NULL,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  user_agent text,
+  enabled boolean NOT NULL DEFAULT true,
+  preferences jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, household_id, endpoint)
+);
+
+CREATE TABLE IF NOT EXISTS public.push_notification_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
+  user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  notification_type text NOT NULL,
+  title text NOT NULL,
+  body text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  status text NOT NULL DEFAULT 'pending',
+  error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  sent_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_household
+  ON public.push_subscriptions (household_id);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_enabled
+  ON public.push_subscriptions (user_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_push_notification_log_household
+  ON public.push_notification_log (household_id, created_at DESC);
+
+DROP TRIGGER IF EXISTS trg_push_subscriptions_updated ON public.push_subscriptions;
+CREATE TRIGGER trg_push_subscriptions_updated BEFORE UPDATE ON public.push_subscriptions
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.guard_push_subscription_household()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.role() = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'Push subscription user_id must match authenticated user';
+  END IF;
+
+  IF NOT public.is_household_member(auth.uid(), NEW.household_id) THEN
+    RAISE EXCEPTION 'User must be an active member of the household';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_push_subscription_household ON public.push_subscriptions;
+CREATE TRIGGER trg_push_subscription_household
+BEFORE INSERT OR UPDATE ON public.push_subscriptions
+FOR EACH ROW EXECUTE FUNCTION public.guard_push_subscription_household();
+
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.push_notification_log ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.push_subscriptions TO authenticated;
+GRANT SELECT ON public.push_notification_log TO authenticated;
+GRANT ALL ON public.push_subscriptions, public.push_notification_log TO service_role;
+
+CREATE POLICY "push_subscriptions_own_read" ON public.push_subscriptions
+FOR SELECT TO authenticated
+USING (user_id = auth.uid() AND public.is_household_member(auth.uid(), household_id));
+
+CREATE POLICY "push_subscriptions_own_insert" ON public.push_subscriptions
+FOR INSERT TO authenticated
+WITH CHECK (user_id = auth.uid() AND public.is_household_member(auth.uid(), household_id));
+
+CREATE POLICY "push_subscriptions_own_update" ON public.push_subscriptions
+FOR UPDATE TO authenticated
+USING (user_id = auth.uid() AND public.is_household_member(auth.uid(), household_id))
+WITH CHECK (user_id = auth.uid() AND public.is_household_member(auth.uid(), household_id));
+
+CREATE POLICY "push_subscriptions_own_delete" ON public.push_subscriptions
+FOR DELETE TO authenticated
+USING (user_id = auth.uid() AND public.is_household_member(auth.uid(), household_id));
+
+CREATE POLICY "push_log_admin_read" ON public.push_notification_log
+FOR SELECT TO authenticated
+USING (public.is_household_admin(auth.uid(), household_id));

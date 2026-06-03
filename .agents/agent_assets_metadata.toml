@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "xEvc0VHUBKBh0goEUjZUj"
+uri = "file://all_migrations.txt"
+type = "text"
+title = "Migracje SQL — wklej w Supabase SQL Editor i kliknij Run"

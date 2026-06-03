@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Crown, Trash2 } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { notifyHousehold } from "@/lib/push";
+import { addHouseholdUser } from "@/lib/api/household.functions";
 
 export const Route = createFileRoute("/household")({ component: HouseholdPage });
 
@@ -109,22 +110,14 @@ function Inner({
 
   const addMember = async (event: React.FormEvent) => {
     event.preventDefault();
-    console.log("[add-member] clicked", {
-      householdId: householdId || "MISSING",
-      email: email.trim(),
-      role: newRole,
-      hasPassword: temporaryPassword.length > 0,
-      callerRole: role,
-    });
     if (!householdId) {
       toast.error(isEnglish ? "No active household selected." : "Brak aktywnego domu/grupy.");
       return;
     }
     setBusy(true);
     try {
-      console.log("[add-member] calling add-household-user");
-      const { data, error } = await supabase.functions.invoke("add-household-user", {
-        body: {
+      const data = await addHouseholdUser({
+        data: {
           household_id: householdId,
           email: email.trim().toLocaleLowerCase(),
           temporary_password: temporaryPassword,
@@ -132,27 +125,7 @@ function Inner({
           label: label.trim() || null,
         },
       });
-      console.log("[add-member] response", {
-        ok: data?.ok,
-        code: data?.code,
-        created: data?.created,
-        hasUserId: !!data?.user_id,
-        error: data?.error,
-        invokeError: error ? String(error.message ?? error) : null,
-      });
-      if (error) {
-        const msg = String(error.message ?? error);
-        if (msg.includes("not found") || msg.includes("Edge Function")) {
-          toast.error(
-            isEnglish
-              ? "Edge Function not deployed. Ask the admin to run: supabase functions deploy add-household-user"
-              : "Edge Function nie jest wdrożona. Poproś admina: supabase functions deploy add-household-user",
-          );
-        } else {
-          toast.error(msg);
-        }
-        return;
-      }
+
       if (data?.ok === false) {
         toast.error(
           data.error ?? (isEnglish ? "Could not add user" : "Nie udało się dodać użytkownika"),
@@ -193,17 +166,14 @@ function Inner({
       setEmail("");
       setTemporaryPassword("");
       setLabel("");
-      console.log("[add-member] members refresh started");
       await qc.invalidateQueries({ queryKey: ["members", householdId] });
-      console.log("[add-member] members refresh completed");
-    } catch (error) {
+    } catch (err) {
       const msg =
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : isEnglish
             ? "Could not add user"
             : "Nie udało się dodać użytkownika";
-      console.error("[add-member] unexpected error", error);
       toast.error(msg);
     } finally {
       setBusy(false);
