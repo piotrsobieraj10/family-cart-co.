@@ -1,0 +1,171 @@
+Mam w aplikacji Family Cart komunikat w ustawieniach powiadomień:
+
+„Brakuje VITE_VAPID_PUBLIC_KEY. Skontaktuj się z administratorem.”
+
+Zweryfikuj i pomóż skonfigurować powiadomienia push PWA.
+
+Nie przebudowuj aplikacji od zera.
+Nie ruszaj bez potrzeby funkcji domów, list, użytkowników, sklepów, cen, paragonów, motywu i języka.
+
+Aktualny problem:
+- UI pokazuje brak VITE_VAPID_PUBLIC_KEY,
+- powiadomienia są zablokowane w przeglądarce,
+- test push nie działa.
+
+------------------------------------------------------------
+1. SPRAWDŹ FRONTEND ENV
+------------------------------------------------------------
+
+Sprawdź, czy aplikacja korzysta z:
+
+VITE_VAPID_PUBLIC_KEY
+
+Zweryfikuj pliki:
+- .env.example
+- src/lib/push.ts
+- src/routes/settings.tsx
+- vite.config.* jeśli potrzebne
+
+Sprawdź, czy frontend nie oczekuje innej nazwy zmiennej.
+
+W .env.example ma być:
+
+VITE_VAPID_PUBLIC_KEY=
+
+Nie dodawaj prawdziwego klucza do repo.
+
+------------------------------------------------------------
+2. WYGENERUJ KLUCZE VAPID
+------------------------------------------------------------
+
+Jeśli pakiet web-push nie jest dostępny, użyj npx.
+
+W terminalu uruchom:
+
+npx web-push generate-vapid-keys
+
+Wynik powinien mieć:
+
+Public Key:
+Private Key:
+
+Po wygenerowaniu wypisz mi dokładnie:
+- który klucz wkleić do Replit Secrets jako VITE_VAPID_PUBLIC_KEY,
+- który klucz wkleić do Supabase Edge Functions jako VAPID_PRIVATE_KEY,
+- czy VAPID_PUBLIC_KEY też trzeba dodać do Supabase.
+
+Nie commituj prawdziwych kluczy.
+
+------------------------------------------------------------
+3. REPLIT SECRETS / FRONTEND
+------------------------------------------------------------
+
+Sprawdź, czy w Replit Secrets / Environment Variables jest ustawione:
+
+VITE_VAPID_PUBLIC_KEY=PUBLIC_KEY_Z_VAPID
+
+Jeżeli nie da się tego ustawić automatycznie z poziomu kodu, napisz mi krok po kroku gdzie to wkleić w Replit.
+
+Po dodaniu VITE_VAPID_PUBLIC_KEY pamiętaj:
+- trzeba ponownie uruchomić build,
+- trzeba ponownie opublikować/restartować aplikację,
+bo VITE_* jest wbudowywane w frontend podczas builda.
+
+------------------------------------------------------------
+4. SUPABASE EDGE FUNCTIONS SECRETS
+------------------------------------------------------------
+
+Sprawdź i wypisz, że w Supabase Dashboard → Edge Functions → Secrets trzeba ustawić:
+
+SUPABASE_SERVICE_ROLE_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_PUBLIC_KEY=
+VAPID_SUBJECT=mailto:twoj@email.com
+
+Jeżeli aplikacja lub Edge Function używa tylko VAPID_PRIVATE_KEY i VAPID_SUBJECT, potwierdź to po sprawdzeniu kodu.
+
+Nie dawaj SUPABASE_SERVICE_ROLE_KEY ani VAPID_PRIVATE_KEY do VITE_*.
+Nie dawaj prawdziwych sekretów do repo.
+
+------------------------------------------------------------
+5. WDROŻENIE EDGE FUNCTIONS
+------------------------------------------------------------
+
+Sprawdź, czy istnieją funkcje:
+
+supabase/functions/save-push-subscription/index.ts
+supabase/functions/delete-push-subscription/index.ts
+supabase/functions/send-push-notification/index.ts
+
+Po ustawieniu sekretów trzeba wdrożyć:
+
+supabase functions deploy save-push-subscription
+supabase functions deploy delete-push-subscription
+supabase functions deploy send-push-notification
+
+Jeżeli Replit ma zalogowany Supabase CLI i może to zrobić — wykonaj deploy.
+
+Jeżeli nie — podaj mi dokładne komendy do ręcznego wykonania.
+
+------------------------------------------------------------
+6. POWIADOMIENIA ZABLOKOWANE W PRZEGLĄDARCE
+------------------------------------------------------------
+
+Dodaj lub sprawdź, czy UI poprawnie pokazuje komunikat, gdy Chrome ma zablokowane powiadomienia.
+
+W podsumowaniu napisz mi instrukcję dla telefonu Android / Chrome:
+
+- jak odblokować powiadomienia dla tej strony,
+- gdzie wejść w ustawienia strony,
+- co zrobić, jeśli wcześniej kliknąłem „blokuj”.
+
+------------------------------------------------------------
+7. WERYFIKACJA PO KONFIGURACJI
+------------------------------------------------------------
+
+Po konfiguracji uruchom:
+
+npm run build
+
+albo właściwy build projektu.
+
+Sprawdź:
+- czy komunikat „Brakuje VITE_VAPID_PUBLIC_KEY” znika,
+- czy UI nadal pokazuje poprawny status powiadomień,
+- czy przycisk „Włącz powiadomienia” działa,
+- czy po zgodzie zapisuje się subskrypcja,
+- czy test push wywołuje send-push-notification,
+- czy błędy są widoczne w UI.
+
+Jeżeli prawdziwy test push nie jest możliwy w Replit, napisz jasno:
+„Pełny test push wymaga HTTPS, VAPID keys i wdrożonych Supabase Edge Functions.”
+
+------------------------------------------------------------
+8. GIT
+------------------------------------------------------------
+
+Nie twórz ZIP-a.
+
+Jeżeli zmieniasz kod, po udanym buildzie wykonaj:
+
+git status
+git add .
+git commit -m "Configure push notification VAPID diagnostics"
+git push
+
+Jeżeli nie zmieniasz kodu, tylko konfigurację/secrets, nie rób commita bez potrzeby.
+
+------------------------------------------------------------
+9. PODSUMOWANIE
+------------------------------------------------------------
+
+Na końcu podsumuj po polsku:
+- czy brakowało VITE_VAPID_PUBLIC_KEY,
+- czy wygenerowano klucze VAPID,
+- gdzie wkleić Public Key,
+- gdzie wkleić Private Key,
+- jakie sekrety trzeba ustawić w Supabase,
+- jakie Edge Functions trzeba wdrożyć,
+- czy build przeszedł,
+- czy komunikat w UI powinien zniknąć po restarcie/publish,
+- jak odblokować powiadomienia w Chrome na telefonie.

@@ -2,6 +2,7 @@ modules = ["nodejs-20", "web", "python-3.11"]
 [agent]
 expertMode = true
 stack = "BEST_EFFORT_FALLBACK"
+integrations = ["javascript_database:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
@@ -22,13 +23,13 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bun run dev"
 waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[ports]]
 localPort = 5000
@@ -38,3 +39,16 @@ externalPort = 80
 deploymentTarget = "autoscale"
 run = ["bun", "x", "vite", "preview", "--host", "0.0.0.0", "--port", "5000"]
 build = ["bun", "run", "build"]
+
+[userenv]
+
+[userenv.shared]
+VITE_SUPABASE_URL = "https://kgwhmhbnypwumxrwbtxt.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnd2htaGJueXB3dW14cndidHh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDkwNTMsImV4cCI6MjA5NTgyNTA1M30.UF4-c5iiD-07lTOViUnZvYvnS2vx3L4CqnUfXiZ4Fn0"
+VITE_SUPABASE_PROJECT_ID = "kgwhmhbnypwumxrwbtxt"
+VITE_REGISTRATION_MODE = "open"
+VITE_EMAIL_CONFIRMATION_REQUIRED = "true"
+SUPABASE_URL = "https://kgwhmhbnypwumxrwbtxt.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnd2htaGJueXB3dW14cndidHh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNDkwNTMsImV4cCI6MjA5NTgyNTA1M30.UF4-c5iiD-07lTOViUnZvYvnS2vx3L4CqnUfXiZ4Fn0"
+APP_URL = ""
+REGISTRATION_MODE = "open"
