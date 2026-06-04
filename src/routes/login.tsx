@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
+import { useAuth, storeToken, clearToken } from "@/lib/auth";
+import { loginFn, registerFn } from "@/lib/api/auth.functions";
 import { BrandFooter } from "@/components/Brand";
 import { toast } from "sonner";
 import { clearActiveHouseholdId } from "@/lib/household";
@@ -17,9 +17,7 @@ const REGISTRATION_MODE: RegistrationMode = ["open", "invite_code", "disabled"].
   registrationModeValue,
 )
   ? (registrationModeValue as RegistrationMode)
-  : "disabled";
-const EMAIL_CONFIRMATION_REQUIRED =
-  (import.meta.env.VITE_EMAIL_CONFIRMATION_REQUIRED ?? "true") === "true";
+  : "open";
 
 function LoginPage() {
   const { user, loading } = useAuth();
@@ -31,8 +29,6 @@ function LoginPage() {
   const [repeatPassword, setRepeatPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [householdName, setHouseholdName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
-  const [signupSubmitted, setSignupSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -46,9 +42,7 @@ function LoginPage() {
       if (mode === "signup") {
         console.log("[auth] register clicked", { email: email.trim(), mode: REGISTRATION_MODE });
         if (REGISTRATION_MODE === "disabled") {
-          toast.error(
-            "Rejestracja jest obecnie wyłączona. Poproś administratora domu o dodanie konta.",
-          );
+          toast.error("Rejestracja jest wyłączona. Poproś administratora o dodanie konta.");
           return;
         }
         if (!firstName.trim() || !householdName.trim()) {
@@ -59,46 +53,38 @@ function LoginPage() {
           toast.error("Hasła nie są takie same");
           return;
         }
-
-        console.log("[auth] invoking register-user edge function");
-        const { data, error } = await supabase.functions.invoke("register-user", {
-          body: {
-            first_name: firstName.trim(),
-            email,
+        const result = await registerFn({
+          data: {
+            email: email.trim(),
             password,
+            first_name: firstName.trim(),
             household_name: householdName.trim(),
-            invite_code: REGISTRATION_MODE === "invite_code" ? inviteCode.trim() : null,
           },
         });
-        if (error) {
-          console.error("[auth] register error:", error.message);
-          throw error;
-        }
-        if (!data?.ok) {
-          console.error("[auth] register failed:", data?.message);
-          toast.error(data?.message ?? "Nie udało się utworzyć konta.");
+        if (!result.ok) {
+          console.error("[auth] register failed:", result.error);
+          toast.error(result.error ?? "Nie udało się utworzyć konta.");
           return;
         }
-
         console.log("[auth] register success");
-        clearActiveHouseholdId();
-        setSignupSubmitted(true);
-        toast.success(data.message);
+        toast.success(result.message ?? "Konto zostało utworzone. Możesz się zalogować.");
+        setMode("signin");
       } else {
-        console.log("[auth] login clicked", { host: new URL(supabase.supabaseUrl).hostname });
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          console.error("[auth] login error:", error.message);
-          if (error.message.toLocaleLowerCase().includes("email not confirmed")) {
-            toast.error("Potwierdź adres e-mail, aby korzystać z aplikacji.");
-            return;
-          }
-          throw error;
+        console.log("[auth] login clicked");
+        clearToken();
+        const result = await loginFn({ data: { email: email.trim(), password } });
+        if (!result.ok) {
+          console.error("[auth] login failed:", result.error);
+          toast.error(result.error ?? "Nieprawidłowy e-mail lub hasło.");
+          return;
         }
         console.log("[auth] login success");
+        storeToken(result.token!);
         clearActiveHouseholdId();
+        navigate({ to: "/", replace: true });
       }
     } catch (error) {
+      console.error("[auth] error:", error);
       toast.error(error instanceof Error ? error.message : "Coś poszło nie tak");
     } finally {
       setBusy(false);
@@ -114,129 +100,102 @@ function LoginPage() {
           <p className="text-muted-foreground mt-1 text-sm">{t("appDescription")}</p>
         </div>
 
-        {signupSubmitted ? (
-          <div className="bg-card rounded-3xl border border-border p-5 shadow-sm text-center space-y-3">
-            <h2 className="text-xl font-semibold">{t("checkEmail")}</h2>
-            <p className="text-sm text-muted-foreground">{t("checkEmailBody")}</p>
+        <form
+          onSubmit={submit}
+          className="bg-card rounded-3xl border border-border p-5 shadow-sm space-y-3"
+        >
+          <div className="flex bg-muted rounded-full p-1 text-sm font-medium">
             <button
-              onClick={() => {
-                setSignupSubmitted(false);
-                setMode("signin");
-              }}
-              className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold"
+              type="button"
+              onClick={() => setMode("signin")}
+              className={`flex-1 py-2 rounded-full ${
+                mode === "signin" ? "bg-card shadow" : "text-muted-foreground"
+              }`}
             >
-              {t("goToLogin")}
+              {t("login")}
             </button>
-          </div>
-        ) : (
-          <form
-            onSubmit={submit}
-            className="bg-card rounded-3xl border border-border p-5 shadow-sm space-y-3"
-          >
-            <div className="flex bg-muted rounded-full p-1 text-sm font-medium">
+            {REGISTRATION_MODE !== "disabled" && (
               <button
                 type="button"
-                onClick={() => setMode("signin")}
+                onClick={() => setMode("signup")}
                 className={`flex-1 py-2 rounded-full ${
-                  mode === "signin" ? "bg-card shadow" : "text-muted-foreground"
+                  mode === "signup" ? "bg-card shadow" : "text-muted-foreground"
                 }`}
               >
-                {t("login")}
+                {t("register")}
               </button>
-              {REGISTRATION_MODE !== "disabled" && (
-                <button
-                  type="button"
-                  onClick={() => setMode("signup")}
-                  className={`flex-1 py-2 rounded-full ${
-                    mode === "signup" ? "bg-card shadow" : "text-muted-foreground"
-                  }`}
-                >
-                  {t("register")}
-                </button>
-              )}
-            </div>
-
-            {mode === "signup" && (
-              <>
-                <input
-                  required
-                  value={firstName}
-                  onChange={(event) => setFirstName(event.target.value)}
-                  placeholder={t("firstName")}
-                  className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
-                />
-                <input
-                  required
-                  value={householdName}
-                  onChange={(event) => setHouseholdName(event.target.value)}
-                  placeholder={t("householdName")}
-                  className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
-                />
-              </>
             )}
+          </div>
 
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="E-mail"
-              className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
-            />
-            <input
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={t("password")}
-              className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
-            />
+          {mode === "signup" && (
+            <>
+              <input
+                required
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                placeholder={t("firstName")}
+                className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
+              />
+              <input
+                required
+                value={householdName}
+                onChange={(event) => setHouseholdName(event.target.value)}
+                placeholder={t("householdName")}
+                className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
+              />
+            </>
+          )}
 
-            {mode === "signup" && (
-              <>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={repeatPassword}
-                  onChange={(event) => setRepeatPassword(event.target.value)}
-                  placeholder={t("repeatPassword")}
-                  className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
-                />
-                {REGISTRATION_MODE === "invite_code" && (
-                  <input
-                    required
-                    value={inviteCode}
-                    onChange={(event) => setInviteCode(event.target.value)}
-                    placeholder={t("inviteCode")}
-                    className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
-                  />
-                )}
-                {EMAIL_CONFIRMATION_REQUIRED && (
-                  <p className="text-xs text-muted-foreground px-1">
-                    {language === "en"
-                      ? "After registration we will send a link to confirm your email address."
-                      : "Po rejestracji wyślemy link do potwierdzenia adresu e-mail."}
-                  </p>
-                )}
-              </>
-            )}
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="E-mail"
+            className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
+          />
+          <input
+            type="password"
+            required
+            minLength={6}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder={t("password")}
+            className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
+          />
 
-            <button
-              disabled={busy}
-              className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold disabled:opacity-60"
-            >
-              {busy ? t("wait") : mode === "signin" ? t("loginCta") : t("registerCta")}
-            </button>
-          </form>
-        )}
+          {mode === "signup" && (
+            <>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={repeatPassword}
+                onChange={(event) => setRepeatPassword(event.target.value)}
+                placeholder={t("repeatPassword")}
+                className="w-full px-4 py-3 rounded-2xl bg-background border border-border"
+              />
+              <p className="text-xs text-muted-foreground px-1">
+                {language === "en"
+                  ? "After registration you can log in immediately."
+                  : "Po rejestracji możesz się od razu zalogować."}
+              </p>
+            </>
+          )}
 
-        {REGISTRATION_MODE === "disabled" && !signupSubmitted && (
+          <button
+            disabled={busy}
+            className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold disabled:opacity-60"
+          >
+            {busy ? t("wait") : mode === "signin" ? t("loginCta") : t("registerCta")}
+          </button>
+        </form>
+
+        {REGISTRATION_MODE === "disabled" && (
           <p className="text-sm text-muted-foreground text-center mt-4">
             {language === "en"
-              ? "Registration is currently disabled. Ask a household administrator to add your account."
-              : "Rejestracja jest obecnie wyłączona. Poproś administratora domu o dodanie konta."}
+              ? "Registration is disabled. Ask an administrator to add your account."
+              : "Rejestracja jest wyłączona. Poproś administratora o dodanie konta."}
           </p>
         )}
 

@@ -1,4 +1,4 @@
-- [Supabase project setup](supabase-setup.md) — nowy projekt ixxjezsvcdctifcuinzf; env vars jako Replit Secrets; client.ts używa VITE_SUPABASE_ANON_KEY
-- [Secure registration trigger](secure-registration.md) — każdy nowy user wymaga wpisu w pending_registrations + registration_token w user_metadata; bez tego trigger blokuje tworzenie konta
-- [Server function for adding household users](household-server-fn.md) — addHouseholdUser w src/lib/api/household.functions.ts zastępuje Supabase Edge Function; czyta Authorization header przez getRequestHeader z @tanstack/start-server-core
+- [Replit PostgreSQL migration](replit-pg-migration.md) — Supabase całkowicie zastąpiony Replit PG + JWT; helium host bez SSL; schemat w db/schema.sql
+- [DB field names](db-field-names.md) — shopping_items: created_by/bought_by/bought_at (nie added_by/checked_by/checked_at); brak exact_match_required i price_observed_at
+- [Server function for adding household users](household-server-fn.md) — addHouseholdUser to re-eksport z data.functions.ts; household.functions.ts to stub
 - [TanStack Start dep optimization fix](tanstack-start-dep-fix.md) — exclude @tanstack/start-server-core from client dep scan; also requires Node.js >=22.12.0 (use nodejs-22 module)

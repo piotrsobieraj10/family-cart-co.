@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { upsertDictionaryEntryFn, savePriceFn } from "@/lib/api/data.functions";
 
 export function normalizePhrase(value: string) {
   return value
@@ -18,7 +18,6 @@ export function formatPrice(value: number | null | undefined) {
 
 export async function rememberProduct({
   householdId,
-  userId,
   phrase,
   category,
   unit,
@@ -26,36 +25,28 @@ export async function rememberProduct({
   barcode,
 }: {
   householdId: string;
-  userId: string;
+  userId?: string;
   phrase: string;
   category?: string | null;
   unit?: string | null;
   storeId?: string | null;
   barcode?: string | null;
 }) {
-  const normalizedPhrase = normalizePhrase(phrase);
-  if (!normalizedPhrase) return;
-
-  const { error } = await supabase.from("household_product_dictionary").upsert(
-    {
-      household_id: householdId,
-      phrase: phrase.trim(),
-      normalized_phrase: normalizedPhrase,
-      category: category || null,
-      default_unit: unit || null,
-      default_store_id: storeId || null,
-      barcode: barcode || null,
-      created_by: userId,
-      updated_by: userId,
+  const normalized = normalizePhrase(phrase);
+  if (!normalized) return;
+  await upsertDictionaryEntryFn({
+    data: {
+      householdId,
+      phrase,
+      category: category ?? null,
+      default_store_id: storeId ?? null,
+      barcode: barcode ?? null,
     },
-    { onConflict: "household_id,normalized_phrase" },
-  );
-  if (error) throw error;
+  });
 }
 
 export async function saveManualPrice({
   householdId,
-  userId,
   storeId,
   productName,
   category,
@@ -63,25 +54,23 @@ export async function saveManualPrice({
   price,
 }: {
   householdId: string;
-  userId: string;
+  userId?: string;
   storeId: string;
   productName: string;
   category?: string | null;
   unit?: string | null;
   price: number;
 }) {
-  const normalizedProductName = normalizePhrase(productName);
-  if (!normalizedProductName || !Number.isFinite(price) || price < 0) return;
-
-  const { error } = await supabase.from("product_price_history").insert({
-    household_id: householdId,
-    store_id: storeId,
-    product_name: productName.trim(),
-    normalized_product_name: normalizedProductName,
-    category: category || null,
-    unit: unit || null,
-    price,
-    created_by: userId,
+  const normalized = normalizePhrase(productName);
+  if (!normalized || !Number.isFinite(price) || price < 0) return;
+  await savePriceFn({
+    data: {
+      householdId,
+      storeId,
+      productName,
+      category: category ?? null,
+      unit: unit ?? null,
+      price,
+    },
   });
-  if (error) throw error;
 }

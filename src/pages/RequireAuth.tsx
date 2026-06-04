@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
-import { useAuth, useMyProfile } from "@/lib/auth";
-import { useMyHouseholds, getActiveHouseholdId, setActiveHouseholdId } from "@/lib/household";
+import { useAuth, useMyProfile, useMyHouseholds } from "@/lib/auth";
+import { getActiveHouseholdId, setActiveHouseholdId } from "@/lib/household";
 import type { HouseholdRole } from "@/lib/permissions";
 
 export function RequireAuth({
@@ -22,10 +22,6 @@ export function RequireAuth({
     if (loading) return;
     if (!user) {
       navigate({ to: "/login", replace: true });
-      return;
-    }
-    if (!user.email_confirmed_at) {
-      navigate({ to: "/confirm-email", replace: true });
       return;
     }
     if (profileLoading) return;
@@ -65,7 +61,7 @@ export function RequireAuth({
     requireHousehold,
   ]);
 
-  if (loading || !user || !user.email_confirmed_at || profileLoading) {
+  if (loading || !user || profileLoading) {
     return <Loader />;
   }
   if (requireCompleteProfile && (profile?.must_complete_profile || profile?.must_change_password))
@@ -79,7 +75,7 @@ export function RequireAuth({
     if (!membership) return <Loader />;
     return (
       <>
-        {children({ userId: user.id, householdId: membership.household_id, role: membership.role })}
+        {children({ userId: user.id, householdId: membership.household_id, role: membership.role as HouseholdRole })}
       </>
     );
   }

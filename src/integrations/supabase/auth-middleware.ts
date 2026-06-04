@@ -1,75 +1,25 @@
-import { createMiddleware } from '@tanstack/react-start'
-import { getRequest } from '@tanstack/react-start/server'
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from './types'
+// Custom auth middleware — verifies JWT from Authorization header using our own secret.
+import { createMiddleware } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
+import { verifyToken } from "@/lib/auth.server";
 
-export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
+export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
-    const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      const missing = [
-        ...(!SUPABASE_URL ? ['VITE_SUPABASE_URL'] : []),
-        ...(!SUPABASE_ANON_KEY ? ['VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_PUBLISHABLE_KEY'] : []),
-      ];
-      const message = `Missing Supabase environment variable(s): ${missing.join(', ')}.`;
-      console.error(`[Supabase] ${message}`);
-      throw new Error(message);
-    }
-
     const request = getRequest();
+    if (!request?.headers) throw new Error("Unauthorized: No request headers");
 
-    if (!request?.headers) {
-      throw new Error('Unauthorized: No request headers available');
-    }
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) throw new Error("Unauthorized: No Bearer token");
 
-    const authHeader = request.headers.get('authorization');
-
-    if (!authHeader) {
-      throw new Error('Unauthorized: No authorization header provided');
-    }
-
-    if (!authHeader.startsWith('Bearer ')) {
-      throw new Error('Unauthorized: Only Bearer tokens are supported');
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    if (!token) {
-      throw new Error('Unauthorized: No token provided');
-    }
-
-    const supabase = createClient<Database>(
-      SUPABASE_URL,
-      SUPABASE_ANON_KEY,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-        auth: {
-          storage: undefined,
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-      }
-    );
-
-    const { data, error } = await supabase.auth.getClaims(token);
-    if (error || !data?.claims) {
-      throw new Error('Unauthorized: Invalid token');
-    }
-
-    if (!data.claims.sub) {
-      throw new Error('Unauthorized: No user ID found in token');
-    }
+    const token = authHeader.slice(7);
+    const payload = await verifyToken(token);
+    if (!payload) throw new Error("Unauthorized: Invalid token");
 
     return next({
       context: {
-        supabase,
-        userId: data.claims.sub,
-        claims: data.claims,
+        userId: payload.sub,
+        email: payload.email,
+        claims: payload,
       },
     });
   },

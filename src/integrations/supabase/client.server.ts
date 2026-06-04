@@ -1,40 +1,7 @@
-// Server-side Supabase client with service role key - bypasses RLS.
-// Use this for admin operations in server functions and server routes only.
-// For user-authenticated queries (with RLS), use the auth middleware instead.
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from './types';
-
-function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ['VITE_SUPABASE_URL'] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
-    ];
-    const message = `Missing Supabase server environment variable(s): ${missing.join(', ')}.`;
-    console.error(`[Supabase Admin] ${message}`);
-    throw new Error(message);
-  }
-
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: {
-      storage: undefined,
-      persistSession: false,
-      autoRefreshToken: false,
-    }
-  });
-}
-
-let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
-
-// Server-side Supabase client with service role - bypasses RLS
-// SECURITY: Only use this for trusted server-side operations, never expose to client code
-// Import like: import { supabaseAdmin } from "@/integrations/supabase/client.server";
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createSupabaseAdminClient>, {
-  get(_, prop, receiver) {
-    if (!_supabaseAdmin) _supabaseAdmin = createSupabaseAdminClient();
-    return Reflect.get(_supabaseAdmin, prop, receiver);
+// Supabase disabled — replaced by Replit PostgreSQL + custom JWT auth.
+// This file is a stub to prevent accidental import errors.
+export const supabaseAdmin = new Proxy({} as never, {
+  get() {
+    throw new Error("[client.server.ts] Supabase has been replaced with Replit PostgreSQL. Use src/integrations/db/index.ts instead.");
   },
 });

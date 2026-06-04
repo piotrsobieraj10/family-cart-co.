@@ -4,10 +4,10 @@ import { useState } from "react";
 import { Store, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { RequireAuth } from "@/pages/RequireAuth";
-import { supabase } from "@/integrations/supabase/client";
 import { canManageHousehold, type HouseholdRole } from "@/lib/permissions";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
+import { getStoresFn, createStoreFn, deleteStoreFn } from "@/lib/api/data.functions";
 
 export const Route = createFileRoute("/stores")({ component: StoresPage });
 
@@ -22,7 +22,7 @@ function StoresPage() {
 }
 
 function Inner({
-  userId,
+  userId: _userId,
   householdId,
   role,
 }: {
@@ -39,43 +39,35 @@ function Inner({
 
   const storesQ = useQuery({
     queryKey: ["stores", householdId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("stores")
-        .select("*")
-        .eq("household_id", householdId)
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => getStoresFn({ data: { householdId } }),
   });
 
   const addStore = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canManage || !name.trim()) return;
     setBusy(true);
-    const { error } = await supabase.from("stores").insert({
-      household_id: householdId,
-      name: name.trim(),
-      created_by: userId,
-    });
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    setName("");
-    qc.invalidateQueries({ queryKey: ["stores", householdId] });
-    toast.success(isEnglish ? "Store added" : "Dodano sklep");
+    try {
+      await createStoreFn({ data: { householdId, name } });
+      setName("");
+      qc.invalidateQueries({ queryKey: ["stores", householdId] });
+      toast.success(isEnglish ? "Store added" : "Dodano sklep");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Błąd");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const removeStore = async (id: string, storeName: string) => {
-    if (
-      !canManage ||
-      !confirm(isEnglish ? `Remove store "${storeName}"?` : `Usunąć sklep „${storeName}”?`)
-    )
+    if (!canManage || !confirm(isEnglish ? `Remove store "${storeName}"?` : `Usunąć sklep „${storeName}"?`))
       return;
-    const { error } = await supabase.from("stores").delete().eq("id", id);
-    if (error) return toast.error(error.message);
-    qc.invalidateQueries({ queryKey: ["stores", householdId] });
-    toast.success(isEnglish ? "Store removed" : "Usunięto sklep");
+    try {
+      await deleteStoreFn({ data: { storeId: id, householdId } });
+      qc.invalidateQueries({ queryKey: ["stores", householdId] });
+      toast.success(isEnglish ? "Store removed" : "Usunięto sklep");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Błąd");
+    }
   };
 
   return (

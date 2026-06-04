@@ -2,9 +2,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RequireAuth } from "@/pages/RequireAuth";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
+import { updateProfileFn } from "@/lib/api/auth.functions";
 
 export const Route = createFileRoute("/complete-profile")({ component: CompleteProfilePage });
 
@@ -30,34 +30,30 @@ function Inner({ userId }: { userId: string }) {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (password.length < 6)
-      return toast.error(
-        isEnglish
-          ? "New password must have at least 6 characters"
-          : "Nowe hasło musi mieć co najmniej 6 znaków",
-      );
+      return toast.error(isEnglish ? "New password must have at least 6 characters" : "Nowe hasło musi mieć co najmniej 6 znaków");
     if (password !== repeatPassword)
       return toast.error(isEnglish ? "Passwords do not match" : "Hasła nie są takie same");
     setBusy(true);
     try {
-      const { error } = await supabase.functions.invoke("complete-profile", {
-        body: {
+      const result = await updateProfileFn({
+        data: {
+          userId,
           first_name: firstName.trim(),
           last_name: lastName.trim(),
-          password,
+          new_password: password,
+          must_complete_profile: false,
+          must_change_password: false,
         },
       });
-      if (error) throw error;
+      if (!result.ok) {
+        toast.error(result.error ?? (isEnglish ? "Could not save details" : "Nie udało się zapisać danych"));
+        return;
+      }
       await qc.invalidateQueries({ queryKey: ["profile", userId] });
       toast.success(isEnglish ? "Account details completed" : "Dane konta zostały uzupełnione");
       navigate({ to: "/", replace: true });
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : isEnglish
-            ? "Could not save details"
-            : "Nie udało się zapisać danych",
-      );
+      toast.error(error instanceof Error ? error.message : (isEnglish ? "Could not save details" : "Nie udało się zapisać danych"));
     } finally {
       setBusy(false);
     }
@@ -113,13 +109,7 @@ function Inner({ userId }: { userId: string }) {
             disabled={busy}
             className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold disabled:opacity-60"
           >
-            {busy
-              ? isEnglish
-                ? "Saving…"
-                : "Zapisuję…"
-              : isEnglish
-                ? "Save and continue"
-                : "Zapisz i przejdź dalej"}
+            {busy ? (isEnglish ? "Saving…" : "Zapisuję…") : (isEnglish ? "Save and continue" : "Zapisz i przejdź dalej")}
           </button>
         </form>
       </div>

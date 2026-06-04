@@ -1,4 +1,6 @@
-import { supabase } from "@/integrations/supabase/client";
+// Push notifications — stub for local Replit PostgreSQL setup.
+// Edge Functions (save/delete/send-push-subscription) are not available without Supabase.
+// The UI is preserved; actual push sending is disabled.
 
 export type PushNotificationStatus =
   | "unsupported"
@@ -89,160 +91,32 @@ export async function getExistingPushSubscription() {
   return registration.pushManager.getSubscription();
 }
 
-export async function subscribeToPush(householdId: string, preferences?: PushPreferences) {
-  if (!isHttpsOrLocalhost()) {
-    throw new Error("Powiadomienia push wymagają HTTPS lub localhost.");
-  }
-  if (!VAPID_PUBLIC_KEY) {
-    throw new Error("Brakuje VITE_VAPID_PUBLIC_KEY. Ustaw publiczny klucz VAPID w konfiguracji.");
-  }
-  if (!isPushSupported()) throw new Error("Ta przeglądarka nie obsługuje powiadomień push.");
-  if (Notification.permission === "denied") {
-    throw new Error("Powiadomienia są zablokowane w ustawieniach przeglądarki.");
-  }
-  if (Notification.permission !== "granted") {
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") throw new Error("Nie udzielono zgody na powiadomienia.");
-  }
-
-  const registration = await ensureServiceWorker();
-  const existing = await registration.pushManager.getSubscription();
-  const subscription =
-    existing ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    }));
-
-  const serialized = serializeSubscription(subscription);
-  const mergedPreferences = { ...DEFAULT_PREFERENCES, ...(preferences ?? {}) };
-  const { data, error } = await supabase.functions.invoke("save-push-subscription", {
-    body: {
-      household_id: householdId,
-      ...serialized,
-      user_agent: navigator.userAgent,
-      preferences: mergedPreferences,
-    },
-  });
-  if (error) throw new Error(String(error.message ?? "Nie udało się zapisać subskrypcji push."));
-  if (data?.error) throw new Error(String(data.error));
-  return { subscription, preferences: mergedPreferences };
+export async function subscribeToPush(_householdId: string, _preferences?: PushPreferences) {
+  throw new Error(
+    "Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY. Funkcja dostępna w pełnej konfiguracji."
+  );
 }
 
-export async function unsubscribeFromPush(householdId: string) {
+export async function unsubscribeFromPush(_householdId: string) {
   const subscription = await getExistingPushSubscription();
-  if (!subscription) return;
-  const { endpoint } = serializeSubscription(subscription);
-  await supabase.functions.invoke("delete-push-subscription", {
-    body: { household_id: householdId, endpoint },
-  });
-  await subscription.unsubscribe();
+  if (subscription) await subscription.unsubscribe();
 }
 
-export async function loadPushPreferences(householdId: string) {
-  const subscription = await getExistingPushSubscription();
-  if (!subscription) return getDefaultPushPreferences();
-  const { endpoint } = serializeSubscription(subscription);
-  const { data, error } = await supabase
-    .from("push_subscriptions")
-    .select("preferences")
-    .eq("household_id", householdId)
-    .eq("endpoint", endpoint)
-    .eq("enabled", true)
-    .maybeSingle();
-  if (error) return getDefaultPushPreferences();
-  return { ...DEFAULT_PREFERENCES, ...(data?.preferences ?? {}) };
+export async function loadPushPreferences(_householdId: string): Promise<Required<PushPreferences>> {
+  return getDefaultPushPreferences();
 }
 
-export async function updatePushPreferences(householdId: string, preferences: PushPreferences) {
-  const subscription = await getExistingPushSubscription();
-  if (!subscription) throw new Error("Brak aktywnej subskrypcji push.");
-  const serialized = serializeSubscription(subscription);
-  const mergedPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
-  const { data, error } = await supabase.functions.invoke("save-push-subscription", {
-    body: {
-      household_id: householdId,
-      ...serialized,
-      user_agent: navigator.userAgent,
-      preferences: mergedPreferences,
-    },
-  });
-  if (error) throw new Error(String(error.message ?? "Nie udało się zapisać preferencji push."));
-  if (data?.error) throw new Error(String(data.error));
-  return mergedPreferences;
+export async function updatePushPreferences(_householdId: string, _preferences: PushPreferences) {
+  throw new Error("Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY.");
 }
 
-/**
- * Sends a test push notification to the calling user's OWN subscriptions
- * by passing include_actor: true. Without this flag, send-push-notification
- * skips the sender's subscriptions, so a solo household would never receive
- * the notification.
- */
-export async function sendTestPush(householdId: string) {
-  if (!isHttpsOrLocalhost()) {
-    throw new Error(
-      "Powiadomienia push wymagają HTTPS lub localhost. Test push nie działa na HTTP.",
-    );
-  }
-  if (!VAPID_PUBLIC_KEY) {
-    throw new Error(
-      "Brakuje VITE_VAPID_PUBLIC_KEY. Ustaw publiczny klucz VAPID w konfiguracji aplikacji.",
-    );
-  }
-  if (!isPushSupported()) {
-    throw new Error("Powiadomienia push nie są obsługiwane w tej przeglądarce.");
-  }
-  const subscription = await getExistingPushSubscription();
-  if (!subscription) {
-    throw new Error("Najpierw włącz powiadomienia push, żeby wysłać test.");
-  }
-
-  console.log("[push-test] calling send-push-notification with include_actor:true");
-
-  const { data, error } = await supabase.functions.invoke("send-push-notification", {
-    body: {
-      household_id: householdId,
-      notification_type: "test",
-      title: "Family Cart",
-      body: "Testowe powiadomienie z Family Cart",
-      include_actor: true,
-      payload: { type: "test", url: "/settings" },
-    },
-  });
-
-  if (error) {
-    const msg = String(error.message ?? error);
-    console.warn("[push-test] edge function error", msg);
-    if (msg.toLowerCase().includes("vapid") || msg.toLowerCase().includes("edge function"))
-      throw new Error(`Edge Function błąd: ${msg}`);
-    throw new Error(`Nie udało się wysłać testowego powiadomienia: ${msg}`);
-  }
-
-  if (data?.error) {
-    const msg = String(data.error);
-    console.warn("[push-test] response error", msg);
-    throw new Error(`Błąd serwera: ${msg}`);
-  }
-
-  const sent: number = data?.sent ?? 0;
-  const failed: number = data?.failed ?? 0;
-  console.log("[push-test] response", { sent, failed });
-
-  if (sent === 0 && failed === 0) {
-    throw new Error(
-      "Brak aktywnych subskrypcji push — powiadomienie nie zostało wysłane do nikogo. Włącz powiadomienia i spróbuj ponownie.",
-    );
-  }
-  if (sent === 0 && failed > 0) {
-    throw new Error(
-      `Wysyłka testowego powiadomienia nie powiodła się (${failed} błąd(ów)). Sprawdź klucze VAPID w Supabase.`,
-    );
-  }
-
-  return { sent, failed };
+export async function sendTestPush(_householdId: string) {
+  throw new Error(
+    "Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY i wdrożenia Edge Functions."
+  );
 }
 
-export async function notifyHousehold(params: {
+export async function notifyHousehold(_params: {
   householdId: string;
   type: string;
   title?: string;
@@ -251,23 +125,5 @@ export async function notifyHousehold(params: {
   itemId?: string | null;
   url?: string;
 }) {
-  try {
-    await supabase.functions.invoke("send-push-notification", {
-      body: {
-        household_id: params.householdId,
-        notification_type: params.type,
-        title: params.title ?? "Family Cart",
-        body: params.body,
-        payload: {
-          type: params.type,
-          household_id: params.householdId,
-          list_id: params.listId ?? null,
-          item_id: params.itemId ?? null,
-          url: params.url ?? "/",
-        },
-      },
-    });
-  } catch (error) {
-    console.warn("[push] notifyHousehold skipped", error);
-  }
+  // stub — push notifications disabled in local setup
 }

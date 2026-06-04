@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { RequireAuth } from "@/pages/RequireAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { getMyProfileFn, getHouseholdFn } from "@/lib/api/data.functions";
 import { signOut } from "@/lib/auth";
 import { BrandFooter } from "@/components/Brand";
 import {
@@ -54,25 +54,11 @@ function Inner({ userId, householdId }: { userId: string; householdId: string })
   const { data: memberships } = useMyHouseholds(userId);
   const profileQ = useQuery({
     queryKey: ["profile", userId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
-      return data;
-    },
+    queryFn: () => getMyProfileFn(),
   });
   const householdQ = useQuery({
     queryKey: ["household", householdId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("households")
-        .select("name")
-        .eq("id", householdId)
-        .maybeSingle();
-      return data;
-    },
+    queryFn: () => getHouseholdFn({ data: { householdId } }),
   });
 
   const doSignOut = async () => {
