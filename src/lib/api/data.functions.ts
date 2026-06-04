@@ -587,3 +587,22 @@ export const upsertDictionaryEntryFn = createServerFn({ method: "POST" })
     `;
     return { id: entry.id };
   });
+
+export const logActivityFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({
+    household_id: z.string(),
+    user_id: z.string(),
+    action: z.string(),
+    description: z.string().optional(),
+    list_id: z.string().nullable().optional(),
+    item_id: z.string().nullable().optional(),
+  }))
+  .handler(async ({ data }) => {
+    const sql = getDb();
+    await sql`
+      INSERT INTO activity_log (household_id, user_id, action, description, list_id, item_id)
+      VALUES (${data.household_id}, ${data.user_id}, ${data.action},
+              ${data.description ?? null}, ${data.list_id ?? null}, ${data.item_id ?? null})
+    `;
+    return { ok: true };
+  });

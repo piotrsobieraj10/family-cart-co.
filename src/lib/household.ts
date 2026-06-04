@@ -18,8 +18,9 @@ export function clearActiveHouseholdId() {
   localStorage.removeItem(KEY);
 }
 
-// logActivity is a no-op stub (no activity_log table in schema)
-export async function logActivity(_params: {
+import { logActivityFn } from "@/lib/api/data.functions";
+
+export async function logActivity(params: {
   household_id: string;
   user_id: string;
   action: string;
@@ -27,5 +28,9 @@ export async function logActivity(_params: {
   list_id?: string | null;
   item_id?: string | null;
 }) {
-  // stub — activity log not implemented in local DB
+  try {
+    await logActivityFn({ data: params });
+  } catch {
+    // non-critical — swallow errors
+  }
 }

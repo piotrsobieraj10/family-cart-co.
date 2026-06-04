@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { RequireAuth } from "@/pages/RequireAuth";
-import { getMyProfileFn, getHouseholdFn } from "@/lib/api/data.functions";
+import { getMyProfileFn } from "@/lib/api/auth.functions";
+import { getHouseholdFn } from "@/lib/api/data.functions";
 import { signOut } from "@/lib/auth";
 import { BrandFooter } from "@/components/Brand";
 import {
