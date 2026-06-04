@@ -83,7 +83,13 @@ export const registerFn = createServerFn({ method: "POST" })
 export const getMeFn = createServerFn({ method: "GET" }).handler(async () => {
   const user = await getUserFromRequest();
   if (!user) return { user: null };
-  return { user: { id: user.id, email: user.email } };
+  // Verify user still exists in the database (guards against stale tokens)
+  const sql = getDb();
+  const [dbUser] = await sql<{ id: string; email: string }[]>`
+    SELECT id, email FROM users WHERE id = ${user.id} LIMIT 1
+  `;
+  if (!dbUser) return { user: null };
+  return { user: { id: dbUser.id, email: dbUser.email } };
 });
 
 // ── getMyProfileFn ─────────────────────────────────────────────────────────

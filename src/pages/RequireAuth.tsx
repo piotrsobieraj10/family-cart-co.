@@ -21,7 +21,9 @@ export function RequireAuth({
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      navigate({ to: "/login", replace: true });
+      void navigate({ to: "/login", replace: true }).catch(() => {
+        if (typeof window !== "undefined") window.location.replace("/login");
+      });
       return;
     }
     if (profileLoading) return;
@@ -29,13 +31,17 @@ export function RequireAuth({
       requireCompleteProfile &&
       (profile?.must_complete_profile || profile?.must_change_password)
     ) {
-      navigate({ to: "/complete-profile", replace: true });
+      void navigate({ to: "/complete-profile", replace: true }).catch(() => {
+        if (typeof window !== "undefined") window.location.replace("/complete-profile");
+      });
       return;
     }
     if (!requireHousehold) return;
     if (hhLoading) return;
     if (!memberships || memberships.length === 0) {
-      navigate({ to: "/onboarding", replace: true });
+      void navigate({ to: "/onboarding", replace: true }).catch(() => {
+        if (typeof window !== "undefined") window.location.replace("/onboarding");
+      });
       return;
     }
     const active = getActiveHouseholdId();
@@ -47,7 +53,9 @@ export function RequireAuth({
       memberships.length > 1 &&
       (!active || !memberships.find((m) => m.household_id === active))
     ) {
-      navigate({ to: "/select-household", replace: true });
+      void navigate({ to: "/select-household", replace: true }).catch(() => {
+        if (typeof window !== "undefined") window.location.replace("/select-household");
+      });
     }
   }, [
     user,
@@ -61,18 +69,32 @@ export function RequireAuth({
     requireHousehold,
   ]);
 
+  // Not authenticated — redirect immediately (covers SSR hydration cases)
+  if (!loading && !user) {
+    if (typeof window !== "undefined") window.location.replace("/login");
+    return <Loader />;
+  }
   if (loading || !user || profileLoading) {
     return <Loader />;
   }
-  if (requireCompleteProfile && (profile?.must_complete_profile || profile?.must_change_password))
+  if (requireCompleteProfile && (profile?.must_complete_profile || profile?.must_change_password)) {
+    if (typeof window !== "undefined") window.location.replace("/complete-profile");
     return <Loader />;
+  }
   if (requireHousehold) {
-    if (hhLoading || !memberships || memberships.length === 0) return <Loader />;
+    if (hhLoading) return <Loader />;
+    if (!memberships || memberships.length === 0) {
+      if (typeof window !== "undefined") window.location.replace("/onboarding");
+      return <Loader />;
+    }
     const active = getActiveHouseholdId();
     const membership =
       memberships.find((m) => m.household_id === active) ??
       (memberships.length === 1 ? memberships[0] : undefined);
-    if (!membership) return <Loader />;
+    if (!membership) {
+      if (typeof window !== "undefined") window.location.replace("/select-household");
+      return <Loader />;
+    }
     return (
       <>
         {children({ userId: user.id, householdId: membership.household_id, role: membership.role as HouseholdRole })}
