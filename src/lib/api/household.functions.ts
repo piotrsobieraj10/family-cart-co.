@@ -49,11 +49,17 @@ export const addHouseholdUser = createServerFn({ method: "POST" })
   .inputValidator(AddHouseholdUserInput)
   .handler(async ({ data }) => {
     const supabaseUrl = process.env.VITE_SUPABASE_URL;
-    const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+    const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-      return { ok: false, code: "missing_env", error: "Brakuje konfiguracji serwera (SUPABASE_URL / SERVICE_ROLE_KEY)." };
+      const missing = [
+        ...(!supabaseUrl ? ["VITE_SUPABASE_URL"] : []),
+        ...(!anonKey ? ["VITE_SUPABASE_ANON_KEY"] : []),
+        ...(!serviceRoleKey ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
+      ];
+      console.error("[household] missing env vars:", missing.join(", "));
+      return { ok: false, code: "missing_env", error: `Brakuje konfiguracji serwera: ${missing.join(", ")}` };
     }
 
     const authorization = getRequestHeader("authorization") ?? getRequestHeader("Authorization");

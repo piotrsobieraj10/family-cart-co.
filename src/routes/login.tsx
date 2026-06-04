@@ -44,6 +44,7 @@ function LoginPage() {
     setBusy(true);
     try {
       if (mode === "signup") {
+        console.log("[auth] register clicked", { email: email.trim(), mode: REGISTRATION_MODE });
         if (REGISTRATION_MODE === "disabled") {
           toast.error(
             "Rejestracja jest obecnie wyłączona. Poproś administratora domu o dodanie konta.",
@@ -59,6 +60,7 @@ function LoginPage() {
           return;
         }
 
+        console.log("[auth] invoking register-user edge function");
         const { data, error } = await supabase.functions.invoke("register-user", {
           body: {
             first_name: firstName.trim(),
@@ -68,24 +70,32 @@ function LoginPage() {
             invite_code: REGISTRATION_MODE === "invite_code" ? inviteCode.trim() : null,
           },
         });
-        if (error) throw error;
+        if (error) {
+          console.error("[auth] register error:", error.message);
+          throw error;
+        }
         if (!data?.ok) {
+          console.error("[auth] register failed:", data?.message);
           toast.error(data?.message ?? "Nie udało się utworzyć konta.");
           return;
         }
 
+        console.log("[auth] register success");
         clearActiveHouseholdId();
         setSignupSubmitted(true);
         toast.success(data.message);
       } else {
+        console.log("[auth] login clicked", { host: new URL(supabase.supabaseUrl).hostname });
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
+          console.error("[auth] login error:", error.message);
           if (error.message.toLocaleLowerCase().includes("email not confirmed")) {
             toast.error("Potwierdź adres e-mail, aby korzystać z aplikacji.");
             return;
           }
           throw error;
         }
+        console.log("[auth] login success");
         clearActiveHouseholdId();
       }
     } catch (error) {
