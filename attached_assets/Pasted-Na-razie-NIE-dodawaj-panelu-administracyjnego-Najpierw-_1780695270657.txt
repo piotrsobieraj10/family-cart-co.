@@ -1,0 +1,75 @@
+Na razie NIE dodawaj panelu administracyjnego.
+
+Najpierw doprowadźmy aplikację Family Cart do pełnego działania na Replit PostgreSQL + własny JWT.
+
+Skoro aplikacja używa teraz DATABASE_URL i wewnętrznej bazy Replit PostgreSQL, wykonaj teraz tylko podstawową konfigurację bazy.
+
+Zadania:
+
+1. Sprawdź, czy DATABASE_URL jest ustawiony.
+2. Sprawdź, czy istnieją wszystkie wymagane tabele:
+- users
+- profiles
+- households
+- household_members
+- shopping_lists
+- shopping_items
+- stores
+- receipts
+- receipt_items
+- product_price_history
+- activity_log albo history, jeśli używane
+- push_subscriptions, jeśli push ma zostać później
+
+3. Jeżeli tabel brakuje, uruchom migracje dla Replit PostgreSQL.
+   Nie używaj Supabase migrations, jeśli są niezgodne z lokalnym modelem.
+   Przygotuj/uruchom migracje pod czysty PostgreSQL.
+
+4. Utwórz konto admina:
+email: biuro@autosafe.immo
+hasło tymczasowe: adminn
+dom/grupa: AutoSafe
+rola: owner
+
+5. Jeżeli aplikacja obsługuje wymuszenie zmiany hasła, ustaw:
+must_change_password = true
+must_complete_profile = true
+
+6. Sprawdź logowanie:
+biuro@autosafe.immo / adminn
+
+7. Sprawdź, czy po logowaniu użytkownik widzi dom AutoSafe i ma rolę owner.
+
+8. Sprawdź dodawanie członka domu:
+- nowy e-mail,
+- istniejący e-mail,
+- użytkownik już należy do domu,
+- brak uprawnień dla member/viewer.
+
+9. Sprawdź listę zakupów:
+- dodanie produktu,
+- szybka lista,
+- kategoryzacja,
+- zapis w bazie po odświeżeniu.
+
+10. Uruchom:
+npm run build
+npx tsc --noEmit
+npm run lint
+
+11. Jeżeli wszystko działa, zrób commit i push:
+git status
+git add .
+git commit -m "Configure Family Cart for Replit PostgreSQL"
+git push
+
+Na końcu podsumuj po polsku:
+- czy DATABASE_URL działa,
+- jakie tabele istnieją,
+- czy migracje zostały uruchomione,
+- czy utworzono admina biuro@autosafe.immo,
+- czy dom AutoSafe istnieje,
+- czy logowanie działa,
+- czy dodawanie członków działa,
+- czy lista zakupów zapisuje się w bazie,
+- czy build/typecheck/lint przeszły.

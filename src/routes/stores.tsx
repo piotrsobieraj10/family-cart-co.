@@ -59,7 +59,10 @@ function Inner({
   };
 
   const removeStore = async (id: string, storeName: string) => {
-    if (!canManage || !confirm(isEnglish ? `Remove store "${storeName}"?` : `Usunąć sklep „${storeName}"?`))
+    if (
+      !canManage ||
+      !confirm(isEnglish ? `Remove store "${storeName}"?` : `Usunąć sklep „${storeName}"?`)
+    )
       return;
     try {
       await deleteStoreFn({ data: { storeId: id, householdId } });

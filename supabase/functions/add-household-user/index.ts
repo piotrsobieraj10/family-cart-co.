@@ -65,7 +65,8 @@ async function findUserByEmail(adminClient: ReturnType<typeof createClient>, ema
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return json({ ok: false, code: "method_not_allowed", error: "Nieprawidłowa metoda" }, 405);
+  if (request.method !== "POST")
+    return json({ ok: false, code: "method_not_allowed", error: "Nieprawidłowa metoda" }, 405);
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -110,7 +111,8 @@ Deno.serve(async (request) => {
     const role = normalizeRole(body.role);
     const label = body.label ? String(body.label).trim() : null;
 
-    if (!householdId) return json({ ok: false, code: "missing_household", error: "Brak aktywnego domu/grupy" });
+    if (!householdId)
+      return json({ ok: false, code: "missing_household", error: "Brak aktywnego domu/grupy" });
     if (!email || !email.includes("@")) {
       return json({ ok: false, code: "invalid_email", error: "Podaj prawidłowy adres e-mail" });
     }
@@ -172,7 +174,10 @@ Deno.serve(async (request) => {
       });
 
       if (error || !data.user) {
-        await adminClient.from("pending_registrations").delete().eq("token_hash", registrationTokenHash);
+        await adminClient
+          .from("pending_registrations")
+          .delete()
+          .eq("token_hash", registrationTokenHash);
         throw error ?? new Error("Nie udało się utworzyć konta");
       }
 
@@ -218,7 +223,10 @@ Deno.serve(async (request) => {
       label,
     };
     const membershipResult = existingMembership
-      ? await adminClient.from("household_members").update(membershipPayload).eq("id", existingMembership.id)
+      ? await adminClient
+          .from("household_members")
+          .update(membershipPayload)
+          .eq("id", existingMembership.id)
       : await adminClient.from("household_members").insert({
           household_id: householdId,
           user_id: userId,
@@ -229,7 +237,10 @@ Deno.serve(async (request) => {
     if (membershipError) {
       if (created) await adminClient.auth.admin.deleteUser(userId);
       if (registrationTokenHash) {
-        await adminClient.from("pending_registrations").delete().eq("token_hash", registrationTokenHash);
+        await adminClient
+          .from("pending_registrations")
+          .delete()
+          .eq("token_hash", registrationTokenHash);
       }
       throw membershipError;
     }

@@ -19,7 +19,8 @@ Deno.serve(async (request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY") ?? Deno.env.get("VITE_VAPID_PUBLIC_KEY") ?? "";
+    const vapidPublicKey =
+      Deno.env.get("VAPID_PUBLIC_KEY") ?? Deno.env.get("VITE_VAPID_PUBLIC_KEY") ?? "";
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
     const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? "mailto:[UZUPEŁNIJ_ADRES_EMAIL]";
     if (!vapidPublicKey || !vapidPrivateKey) throw new Error("Brakuje konfiguracji VAPID");
@@ -65,7 +66,13 @@ Deno.serve(async (request) => {
     let failed = 0;
     for (const subscription of subscriptions ?? []) {
       if (!includeActor && subscription.user_id === authData.user.id) continue;
-      if (!preferenceAllows(subscription.preferences as Record<string, unknown> | null, notificationType)) continue;
+      if (
+        !preferenceAllows(
+          subscription.preferences as Record<string, unknown> | null,
+          notificationType,
+        )
+      )
+        continue;
 
       try {
         await webpush.sendNotification(
@@ -73,7 +80,13 @@ Deno.serve(async (request) => {
             endpoint: subscription.endpoint,
             keys: { p256dh: subscription.p256dh, auth: subscription.auth },
           },
-          JSON.stringify({ title, body: message, type: notificationType, payload, url: (payload as { url?: string }).url ?? "/" }),
+          JSON.stringify({
+            title,
+            body: message,
+            type: notificationType,
+            payload,
+            url: (payload as { url?: string }).url ?? "/",
+          }),
         );
         sent += 1;
         await adminClient.from("push_notification_log").insert({

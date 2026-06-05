@@ -24,7 +24,15 @@ function AddPage() {
   );
 }
 
-function Inner({ userId, householdId, role }: { userId: string; householdId: string; role?: HouseholdRole }) {
+function Inner({
+  userId,
+  householdId,
+  role,
+}: {
+  userId: string;
+  householdId: string;
+  role?: HouseholdRole;
+}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { language, t } = useI18n();
@@ -66,7 +74,12 @@ function Inner({ userId, householdId, role }: { userId: string; householdId: str
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    if (!canAddItems(role)) return toast.error(isEnglish ? "You do not have permission to add products" : "Nie masz uprawnień do dodawania produktów");
+    if (!canAddItems(role))
+      return toast.error(
+        isEnglish
+          ? "You do not have permission to add products"
+          : "Nie masz uprawnień do dodawania produktów",
+      );
     setBusy(true);
     try {
       const list = await ensureActiveList(householdId, userId);
@@ -89,15 +102,39 @@ function Inner({ userId, householdId, role }: { userId: string; householdId: str
       });
 
       try {
-        await rememberProduct({ householdId, phrase: name, category, unit, storeId: selectedStoreId });
+        await rememberProduct({
+          householdId,
+          phrase: name,
+          category,
+          unit,
+          storeId: selectedStoreId,
+        });
         if (price != null && selectedStoreId) {
-          await saveManualPrice({ householdId, storeId: selectedStoreId, productName: name, category, unit, price });
+          await saveManualPrice({
+            householdId,
+            storeId: selectedStoreId,
+            productName: name,
+            category,
+            unit,
+            price,
+          });
         }
       } catch {
-        toast.error(isEnglish ? "Product added, but price memory and suggestions could not be updated" : "Produkt dodano, ale nie udało się zaktualizować pamięci cen i sugestii");
+        toast.error(
+          isEnglish
+            ? "Product added, but price memory and suggestions could not be updated"
+            : "Produkt dodano, ale nie udało się zaktualizować pamięci cen i sugestii",
+        );
       }
 
-      void notifyHousehold({ householdId, type: "item_added", body: isEnglish ? `Added: ${name.trim()}` : `Dodano: ${name.trim()}`, listId, itemId: result.id, url: "/" });
+      void notifyHousehold({
+        householdId,
+        type: "item_added",
+        body: isEnglish ? `Added: ${name.trim()}` : `Dodano: ${name.trim()}`,
+        listId,
+        itemId: result.id,
+        url: "/",
+      });
       qc.invalidateQueries({ queryKey: ["items"] });
       qc.invalidateQueries({ queryKey: ["active-list", householdId] });
       toast.success(isEnglish ? "Product added" : "Dodano produkt");
@@ -113,8 +150,13 @@ function Inner({ userId, householdId, role }: { userId: string; householdId: str
     <AppShell title={t("addProduct")}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-2 bg-muted rounded-2xl p-1">
-          <div className="text-center py-2 rounded-xl bg-card shadow-sm text-sm font-medium">{t("addProduct")}</div>
-          <Link to="/quick-add" className="text-center py-2 rounded-xl text-sm font-medium text-muted-foreground">
+          <div className="text-center py-2 rounded-xl bg-card shadow-sm text-sm font-medium">
+            {t("addProduct")}
+          </div>
+          <Link
+            to="/quick-add"
+            className="text-center py-2 rounded-xl text-sm font-medium text-muted-foreground"
+          >
             {isEnglish ? "Quick list" : "Szybka lista"}
           </Link>
         </div>
@@ -134,11 +176,20 @@ function Inner({ userId, householdId, role }: { userId: string; householdId: str
 
         {suggestions.length > 0 && (
           <div className="bg-card border border-border rounded-2xl p-2 space-y-1">
-            <div className="px-2 pb-1 text-xs text-muted-foreground">{isEnglish ? "Suggestions from this household" : "Sugestie z tego domu"}</div>
+            <div className="px-2 pb-1 text-xs text-muted-foreground">
+              {isEnglish ? "Suggestions from this household" : "Sugestie z tego domu"}
+            </div>
             {suggestions.map((s) => (
-              <button key={s.id} type="button" onClick={() => applySuggestion(s)} className="w-full px-3 py-2 rounded-xl text-left hover:bg-muted">
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => applySuggestion(s)}
+                className="w-full px-3 py-2 rounded-xl text-left hover:bg-muted"
+              >
                 <div className="text-sm font-medium">{s.phrase}</div>
-                <div className="text-xs text-muted-foreground">{[s.category].filter(Boolean).join(" · ")}</div>
+                <div className="text-xs text-muted-foreground">
+                  {[s.category].filter(Boolean).join(" · ")}
+                </div>
               </button>
             ))}
           </div>
@@ -146,47 +197,108 @@ function Inner({ userId, householdId, role }: { userId: string; householdId: str
 
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-card border border-border rounded-2xl px-3 py-2">
-            <label className="text-xs text-muted-foreground">{isEnglish ? "Quantity" : "Ilość"}</label>
-            <input type="number" step="0.1" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-full bg-transparent outline-none text-base" />
+            <label className="text-xs text-muted-foreground">
+              {isEnglish ? "Quantity" : "Ilość"}
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="w-full bg-transparent outline-none text-base"
+            />
           </div>
           <div className="bg-card border border-border rounded-2xl px-3 py-2">
-            <label className="text-xs text-muted-foreground">{isEnglish ? "Unit" : "Jednostka"}</label>
-            <select value={unit} onChange={(e) => setUnit(e.target.value)} className="w-full bg-transparent outline-none text-base">
-              {UNITS.map((u) => <option key={u}>{u}</option>)}
+            <label className="text-xs text-muted-foreground">
+              {isEnglish ? "Unit" : "Jednostka"}
+            </label>
+            <select
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              className="w-full bg-transparent outline-none text-base"
+            >
+              {UNITS.map((u) => (
+                <option key={u}>{u}</option>
+              ))}
             </select>
           </div>
         </div>
 
         <div className="bg-card border border-border rounded-2xl px-3 py-2">
-          <label className="text-xs text-muted-foreground">{isEnglish ? "Category" : "Kategoria"}</label>
-          <select value={category} onChange={(e) => { setCategory(e.target.value); setCategoryManual(true); }} className="w-full bg-transparent outline-none text-base">
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+          <label className="text-xs text-muted-foreground">
+            {isEnglish ? "Category" : "Kategoria"}
+          </label>
+          <select
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              setCategoryManual(true);
+            }}
+            className="w-full bg-transparent outline-none text-base"
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
           </select>
         </div>
 
         {!categoryManual && name.trim() && (
           <p className="text-xs text-muted-foreground px-1">
-            {category === "Inne" ? (isEnglish ? "Category not recognized - set to Other." : "Nie rozpoznano kategorii — ustawiono Inne.") : (isEnglish ? "Category selected automatically. You can change it." : "Kategoria dobrana automatycznie. Możesz ją zmienić.")}
+            {category === "Inne"
+              ? isEnglish
+                ? "Category not recognized - set to Other."
+                : "Nie rozpoznano kategorii — ustawiono Inne."
+              : isEnglish
+                ? "Category selected automatically. You can change it."
+                : "Kategoria dobrana automatycznie. Możesz ją zmienić."}
           </p>
         )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-card border border-border rounded-2xl px-3 py-2">
             <label className="text-xs text-muted-foreground">{isEnglish ? "Store" : "Sklep"}</label>
-            <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="w-full bg-transparent outline-none text-base">
+            <select
+              value={storeId}
+              onChange={(e) => setStoreId(e.target.value)}
+              className="w-full bg-transparent outline-none text-base"
+            >
               <option value="">{isEnglish ? "Default list store" : "Domyślny sklep listy"}</option>
-              {(storesQ.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {(storesQ.data ?? []).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
             </select>
           </div>
           <div className="bg-card border border-border rounded-2xl px-3 py-2">
-            <label className="text-xs text-muted-foreground">{isEnglish ? "Unit price" : "Cena za jednostkę"}</label>
-            <input type="number" min="0" step="0.01" value={estimatedPrice} onChange={(e) => setEstimatedPrice(e.target.value)} placeholder={isEnglish ? "e.g. 4.99" : "np. 4,99"} className="w-full bg-transparent outline-none text-base" />
+            <label className="text-xs text-muted-foreground">
+              {isEnglish ? "Unit price" : "Cena za jednostkę"}
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={estimatedPrice}
+              onChange={(e) => setEstimatedPrice(e.target.value)}
+              placeholder={isEnglish ? "e.g. 4.99" : "np. 4,99"}
+              className="w-full bg-transparent outline-none text-base"
+            />
           </div>
         </div>
 
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={isEnglish ? "Note (optional)" : "Notatka (opcjonalnie)"} rows={2} className="w-full px-4 py-3 rounded-2xl bg-card border border-border" />
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={isEnglish ? "Note (optional)" : "Notatka (opcjonalnie)"}
+          rows={2}
+          className="w-full px-4 py-3 rounded-2xl bg-card border border-border"
+        />
 
-        <button disabled={busy || !name.trim() || !canAddItems(role)} className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-semibold disabled:opacity-60">
+        <button
+          disabled={busy || !name.trim() || !canAddItems(role)}
+          className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-semibold disabled:opacity-60"
+        >
           {busy ? (isEnglish ? "Adding…" : "Dodaję…") : t("addProductCta")}
         </button>
       </form>

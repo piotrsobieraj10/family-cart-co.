@@ -60,10 +60,17 @@ export const getHouseholdMembersFn = createServerFn({ method: "GET" })
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    const rows = await sql<{
-      id: string; user_id: string; role: string; status: string; label: string | null;
-      display_name: string | null; email: string | null;
-    }[]>`
+    const rows = await sql<
+      {
+        id: string;
+        user_id: string;
+        role: string;
+        status: string;
+        label: string | null;
+        display_name: string | null;
+        email: string | null;
+      }[]
+    >`
       SELECT hm.id, hm.user_id, hm.role, hm.status, hm.label,
              p.display_name, p.email
       FROM household_members hm
@@ -88,13 +95,15 @@ export const removeMemberFn = createServerFn({ method: "POST" })
   });
 
 export const addHouseholdMemberFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    household_id: z.string(),
-    email: z.string().email(),
-    temporary_password: z.string().optional().default(""),
-    role: z.enum(["admin", "member", "viewer"]),
-    label: z.string().nullable().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      household_id: z.string(),
+      email: z.string().email(),
+      temporary_password: z.string().optional().default(""),
+      role: z.enum(["admin", "member", "viewer"]),
+      label: z.string().nullable().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const caller = await requireUser();
     const sql = getDb();
@@ -113,7 +122,11 @@ export const addHouseholdMemberFn = createServerFn({ method: "POST" })
       userId = existingUser.id;
     } else {
       if (!data.temporary_password || data.temporary_password.length < 6) {
-        return { ok: false, code: "temporary_password_required", error: "Ten e-mail nie istnieje w systemie. Podaj hasło tymczasowe (min. 6 znaków)." };
+        return {
+          ok: false,
+          code: "temporary_password_required",
+          error: "Ten e-mail nie istnieje w systemie. Podaj hasło tymczasowe (min. 6 znaków).",
+        };
       }
       const { hashPassword } = await import("@/lib/auth.server");
       const hash = await hashPassword(data.temporary_password);
@@ -173,7 +186,10 @@ export const createStoreFn = createServerFn({ method: "POST" })
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
     const name = data.name.trim();
-    const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const normalized = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
     const [store] = await sql<{ id: string }[]>`
       INSERT INTO stores (household_id, name, normalized_name, created_by)
       VALUES (${data.householdId}, ${name}, ${normalized}, ${user.id})
@@ -200,10 +216,16 @@ export const getActiveListFn = createServerFn({ method: "GET" })
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    const [list] = await sql<{
-      id: string; status: string; default_store_id: string | null;
-      budget_amount: number | null; estimated_total: number | null; actual_total: number | null;
-    }[]>`
+    const [list] = await sql<
+      {
+        id: string;
+        status: string;
+        default_store_id: string | null;
+        budget_amount: number | null;
+        estimated_total: number | null;
+        actual_total: number | null;
+      }[]
+    >`
       SELECT id, status, default_store_id, budget_amount, estimated_total, actual_total
       FROM shopping_lists
       WHERE household_id = ${data.householdId}
@@ -220,18 +242,18 @@ export const ensureActiveListFn = createServerFn({ method: "POST" })
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
 
-    const [existing] = await sql<{ id: string; status: string }[]>`
-      SELECT id, status FROM shopping_lists
+    const [existing] = await sql<{ id: string; status: string; default_store_id: string | null }[]>`
+      SELECT id, status, default_store_id FROM shopping_lists
       WHERE household_id = ${data.householdId}
         AND status IN ('active', 'shopping', 'partially_done')
       ORDER BY created_at DESC LIMIT 1
     `;
     if (existing) return existing;
 
-    const [list] = await sql<{ id: string; status: string }[]>`
+    const [list] = await sql<{ id: string; status: string; default_store_id: string | null }[]>`
       INSERT INTO shopping_lists (household_id, created_by, name, status)
       VALUES (${data.householdId}, ${user.id}, 'Lista zakupów', 'active')
-      RETURNING id, status
+      RETURNING id, status, default_store_id
     `;
     return list;
   });
@@ -243,11 +265,22 @@ export const getShoppingItemsFn = createServerFn({ method: "GET" })
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    return sql<{
-      id: string; name: string; category: string | null; quantity: number | null;
-      unit: string | null; note: string | null; status: string; store_id: string | null;
-      estimated_unit_price: number | null; created_by: string | null; bought_by: string | null; bought_at: string | null;
-    }[]>`
+    return sql<
+      {
+        id: string;
+        name: string;
+        category: string | null;
+        quantity: number | null;
+        unit: string | null;
+        note: string | null;
+        status: string;
+        store_id: string | null;
+        estimated_unit_price: number | null;
+        created_by: string | null;
+        bought_by: string | null;
+        bought_at: string | null;
+      }[]
+    >`
       SELECT id, name, category, quantity, unit, note, status, store_id,
              estimated_unit_price, created_by, bought_by, bought_at
       FROM shopping_items
@@ -257,17 +290,19 @@ export const getShoppingItemsFn = createServerFn({ method: "GET" })
   });
 
 export const addItemFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    listId: z.string(),
-    householdId: z.string(),
-    name: z.string().min(1),
-    category: z.string().nullable().optional(),
-    quantity: z.number().nullable().optional(),
-    unit: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
-    store_id: z.string().nullable().optional(),
-    estimated_unit_price: z.number().nullable().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      listId: z.string(),
+      householdId: z.string(),
+      name: z.string().min(1),
+      category: z.string().nullable().optional(),
+      quantity: z.number().nullable().optional(),
+      unit: z.string().nullable().optional(),
+      note: z.string().nullable().optional(),
+      store_id: z.string().nullable().optional(),
+      estimated_unit_price: z.number().nullable().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
@@ -285,11 +320,13 @@ export const addItemFn = createServerFn({ method: "POST" })
   });
 
 export const updateItemStatusFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    itemId: z.string(),
-    householdId: z.string(),
-    status: z.enum(["active", "bought", "unavailable", "deleted"]),
-  }))
+  .inputValidator(
+    z.object({
+      itemId: z.string(),
+      householdId: z.string(),
+      status: z.enum(["active", "bought", "unavailable", "deleted"]),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
@@ -326,10 +363,16 @@ export const getDictionaryFn = createServerFn({ method: "GET" })
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    return sql<{
-      id: string; phrase: string; normalized_phrase: string; category: string | null;
-      default_store_id: string | null; barcode: string | null;
-    }[]>`
+    return sql<
+      {
+        id: string;
+        phrase: string;
+        normalized_phrase: string;
+        category: string | null;
+        default_store_id: string | null;
+        barcode: string | null;
+      }[]
+    >`
       SELECT id, phrase, normalized_phrase, category, default_store_id, barcode
       FROM household_product_dictionary
       WHERE household_id = ${data.householdId}
@@ -366,13 +409,25 @@ export const getItemFn = createServerFn({ method: "GET" })
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    const [item] = await sql<{
-      id: string; list_id: string; name: string; category: string | null;
-      quantity: number | null; unit: string | null; note: string | null; status: string;
-      store_id: string | null; estimated_unit_price: number | null;
-      created_by: string | null; bought_by: string | null; bought_at: string | null;
-      created_at: string; updated_at: string;
-    }[]>`
+    const [item] = await sql<
+      {
+        id: string;
+        list_id: string;
+        name: string;
+        category: string | null;
+        quantity: number | null;
+        unit: string | null;
+        note: string | null;
+        status: string;
+        store_id: string | null;
+        estimated_unit_price: number | null;
+        created_by: string | null;
+        bought_by: string | null;
+        bought_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }[]
+    >`
       SELECT id, list_id, name, category, quantity, unit, note, status, store_id,
              estimated_unit_price, created_by, bought_by, bought_at, created_at, updated_at
       FROM shopping_items WHERE id = ${data.itemId} AND household_id = ${data.householdId}
@@ -382,17 +437,19 @@ export const getItemFn = createServerFn({ method: "GET" })
 
 // ── UPDATE ITEM ────────────────────────────────────────────────────────────
 export const updateItemFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    itemId: z.string(),
-    householdId: z.string(),
-    name: z.string().optional(),
-    category: z.string().nullable().optional(),
-    quantity: z.number().nullable().optional(),
-    unit: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
-    store_id: z.string().nullable().optional(),
-    estimated_unit_price: z.number().nullable().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      itemId: z.string(),
+      householdId: z.string(),
+      name: z.string().optional(),
+      category: z.string().nullable().optional(),
+      quantity: z.number().nullable().optional(),
+      unit: z.string().nullable().optional(),
+      note: z.string().nullable().optional(),
+      store_id: z.string().nullable().optional(),
+      estimated_unit_price: z.number().nullable().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
@@ -419,10 +476,17 @@ export const getHistoryFn = createServerFn({ method: "GET" })
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    return sql<{
-      id: string; name: string; category: string | null; quantity: number | null;
-      unit: string | null; bought_at: string | null; list_id: string;
-    }[]>`
+    return sql<
+      {
+        id: string;
+        name: string;
+        category: string | null;
+        quantity: number | null;
+        unit: string | null;
+        bought_at: string | null;
+        list_id: string;
+      }[]
+    >`
       SELECT id, name, category, quantity, unit, bought_at, list_id
       FROM shopping_items
       WHERE household_id = ${data.householdId} AND status = 'bought'
@@ -438,10 +502,16 @@ export const getReceiptsFn = createServerFn({ method: "GET" })
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    return sql<{
-      id: string; store_id: string | null; receipt_date: string | null;
-      total_amount: number | null; ocr_status: string | null; created_at: string;
-    }[]>`
+    return sql<
+      {
+        id: string;
+        store_id: string | null;
+        receipt_date: string | null;
+        total_amount: number | null;
+        ocr_status: string | null;
+        created_at: string;
+      }[]
+    >`
       SELECT id, store_id, receipt_date, total_amount, ocr_status, created_at
       FROM receipts WHERE household_id = ${data.householdId}
       ORDER BY created_at DESC
@@ -449,12 +519,14 @@ export const getReceiptsFn = createServerFn({ method: "GET" })
   });
 
 export const addReceiptFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    householdId: z.string(),
-    store_id: z.string().nullable().optional(),
-    receipt_date: z.string().nullable().optional(),
-    total_amount: z.number().nullable().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      householdId: z.string(),
+      store_id: z.string().nullable().optional(),
+      receipt_date: z.string().nullable().optional(),
+      total_amount: z.number().nullable().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
@@ -470,13 +542,15 @@ export const addReceiptFn = createServerFn({ method: "POST" })
 
 // ── SAVE LIST SETTINGS ─────────────────────────────────────────────────────
 export const saveListSettingsFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    listId: z.string(),
-    householdId: z.string(),
-    budget_amount: z.number().nullable().optional(),
-    default_store_id: z.string().nullable().optional(),
-    estimated_total: z.number().nullable().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      listId: z.string(),
+      householdId: z.string(),
+      budget_amount: z.number().nullable().optional(),
+      default_store_id: z.string().nullable().optional(),
+      estimated_total: z.number().nullable().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
@@ -494,7 +568,13 @@ export const saveListSettingsFn = createServerFn({ method: "POST" })
 
 // ── FINISH SHOPPING ────────────────────────────────────────────────────────
 export const finishShoppingFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ listId: z.string(), householdId: z.string(), status: z.enum(["done", "partially_done"]) }))
+  .inputValidator(
+    z.object({
+      listId: z.string(),
+      householdId: z.string(),
+      status: z.enum(["done", "partially_done"]),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
@@ -508,19 +588,24 @@ export const finishShoppingFn = createServerFn({ method: "POST" })
 
 // ── SAVE PRICE HISTORY ─────────────────────────────────────────────────────
 export const savePriceFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    householdId: z.string(),
-    storeId: z.string(),
-    productName: z.string().min(1),
-    category: z.string().nullable().optional(),
-    unit: z.string().nullable().optional(),
-    price: z.number().min(0),
-  }))
+  .inputValidator(
+    z.object({
+      householdId: z.string(),
+      storeId: z.string(),
+      productName: z.string().min(1),
+      category: z.string().nullable().optional(),
+      unit: z.string().nullable().optional(),
+      price: z.number().min(0),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
-    const normalized = data.productName.toLowerCase().replace(/[^a-z0-9\s]+/g, " ").trim();
+    const normalized = data.productName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]+/g, " ")
+      .trim();
     await sql`
       INSERT INTO product_price_history
         (household_id, store_id, product_name, normalized_product_name, category, unit, price, created_by)
@@ -532,17 +617,21 @@ export const savePriceFn = createServerFn({ method: "POST" })
 
 // ── QUICK ADD (bulk items) ─────────────────────────────────────────────────
 export const quickAddItemsFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    householdId: z.string(),
-    listId: z.string(),
-    items: z.array(z.object({
-      name: z.string().min(1),
-      quantity: z.number().nullable().optional(),
-      unit: z.string().nullable().optional(),
-      category: z.string().nullable().optional(),
-      store_id: z.string().nullable().optional(),
-    })),
-  }))
+  .inputValidator(
+    z.object({
+      householdId: z.string(),
+      listId: z.string(),
+      items: z.array(
+        z.object({
+          name: z.string().min(1),
+          quantity: z.number().nullable().optional(),
+          unit: z.string().nullable().optional(),
+          category: z.string().nullable().optional(),
+          store_id: z.string().nullable().optional(),
+        }),
+      ),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
@@ -558,19 +647,25 @@ export const quickAddItemsFn = createServerFn({ method: "POST" })
   });
 
 export const upsertDictionaryEntryFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    householdId: z.string(),
-    phrase: z.string().min(1),
-    category: z.string().nullable().optional(),
-    default_store_id: z.string().nullable().optional(),
-    barcode: z.string().nullable().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      householdId: z.string(),
+      phrase: z.string().min(1),
+      category: z.string().nullable().optional(),
+      default_store_id: z.string().nullable().optional(),
+      barcode: z.string().nullable().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
     const sql = getDb();
     const phrase = data.phrase.trim();
-    const normalized = phrase.toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+    const normalized = phrase
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     const [entry] = await sql<{ id: string }[]>`
       INSERT INTO household_product_dictionary
         (household_id, phrase, normalized_phrase, category, default_store_id, barcode, updated_by)
@@ -589,14 +684,16 @@ export const upsertDictionaryEntryFn = createServerFn({ method: "POST" })
   });
 
 export const logActivityFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    household_id: z.string(),
-    user_id: z.string(),
-    action: z.string(),
-    description: z.string().optional(),
-    list_id: z.string().nullable().optional(),
-    item_id: z.string().nullable().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      household_id: z.string(),
+      user_id: z.string(),
+      action: z.string(),
+      description: z.string().optional(),
+      list_id: z.string().nullable().optional(),
+      item_id: z.string().nullable().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const sql = getDb();
     await sql`

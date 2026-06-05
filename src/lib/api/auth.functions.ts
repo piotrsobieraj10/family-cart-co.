@@ -40,12 +40,14 @@ export const loginFn = createServerFn({ method: "POST" })
 
 // ── register ───────────────────────────────────────────────────────────────
 export const registerFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    email: z.string().email(),
-    password: z.string().min(6),
-    first_name: z.string().min(1),
-    household_name: z.string().min(1),
-  }))
+  .inputValidator(
+    z.object({
+      email: z.string().email(),
+      password: z.string().min(6),
+      first_name: z.string().min(1),
+      household_name: z.string().min(1),
+    }),
+  )
   .handler(async ({ data }) => {
     const sql = getDb();
     const email = data.email.trim().toLowerCase();
@@ -97,11 +99,17 @@ export const getMyProfileFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ userId: z.string() }))
   .handler(async ({ data }) => {
     const sql = getDb();
-    const [profile] = await sql<{
-      id: string; display_name: string | null; email: string | null;
-      first_name: string | null; last_name: string | null;
-      must_complete_profile: boolean; must_change_password: boolean;
-    }[]>`
+    const [profile] = await sql<
+      {
+        id: string;
+        display_name: string | null;
+        email: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        must_complete_profile: boolean;
+        must_change_password: boolean;
+      }[]
+    >`
       SELECT id, display_name, email, first_name, last_name, must_complete_profile, must_change_password
       FROM profiles WHERE user_id = ${data.userId} LIMIT 1
     `;
@@ -113,10 +121,16 @@ export const getMyHouseholdsFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ userId: z.string() }))
   .handler(async ({ data }) => {
     const sql = getDb();
-    const rows = await sql<{
-      household_id: string; role: string; status: string;
-      id: string; name: string; owner_id: string;
-    }[]>`
+    const rows = await sql<
+      {
+        household_id: string;
+        role: string;
+        status: string;
+        id: string;
+        name: string;
+        owner_id: string;
+      }[]
+    >`
       SELECT hm.household_id, hm.role, hm.status, h.id, h.name, h.owner_id
       FROM household_members hm
       JOIN households h ON h.id = hm.household_id
@@ -132,16 +146,18 @@ export const getMyHouseholdsFn = createServerFn({ method: "GET" })
 
 // ── updateProfileFn ────────────────────────────────────────────────────────
 export const updateProfileFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    userId: z.string(),
-    display_name: z.string().optional(),
-    first_name: z.string().optional(),
-    last_name: z.string().optional(),
-    must_complete_profile: z.boolean().optional(),
-    must_change_password: z.boolean().optional(),
-    new_password: z.string().min(6).optional(),
-    current_password: z.string().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      userId: z.string(),
+      display_name: z.string().optional(),
+      first_name: z.string().optional(),
+      last_name: z.string().optional(),
+      must_complete_profile: z.boolean().optional(),
+      must_change_password: z.boolean().optional(),
+      new_password: z.string().min(6).optional(),
+      current_password: z.string().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const sql = getDb();
 

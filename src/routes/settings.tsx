@@ -55,7 +55,7 @@ function Inner({ userId, householdId }: { userId: string; householdId: string })
   const { data: memberships } = useMyHouseholds(userId);
   const profileQ = useQuery({
     queryKey: ["profile", userId],
-    queryFn: () => getMyProfileFn(),
+    queryFn: () => getMyProfileFn({ data: { userId } }),
   });
   const householdQ = useQuery({
     queryKey: ["household", householdId],

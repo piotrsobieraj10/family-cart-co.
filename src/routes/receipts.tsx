@@ -22,7 +22,15 @@ function ReceiptsPage() {
   );
 }
 
-function Inner({ userId: _userId, householdId, role }: { userId: string; householdId: string; role?: HouseholdRole }) {
+function Inner({
+  userId: _userId,
+  householdId,
+  role,
+}: {
+  userId: string;
+  householdId: string;
+  role?: HouseholdRole;
+}) {
   const qc = useQueryClient();
   const { language, t } = useI18n();
   const isEnglish = language === "en";
@@ -32,8 +40,14 @@ function Inner({ userId: _userId, householdId, role }: { userId: string; househo
   const [busy, setBusy] = useState(false);
   const canAdd = canAddItems(role);
 
-  const storesQ = useQuery({ queryKey: ["stores", householdId], queryFn: () => getStoresFn({ data: { householdId } }) });
-  const receiptsQ = useQuery({ queryKey: ["receipts", householdId], queryFn: () => getReceiptsFn({ data: { householdId } }) });
+  const storesQ = useQuery({
+    queryKey: ["stores", householdId],
+    queryFn: () => getStoresFn({ data: { householdId } }),
+  });
+  const receiptsQ = useQuery({
+    queryKey: ["receipts", householdId],
+    queryFn: () => getReceiptsFn({ data: { householdId } }),
+  });
 
   const addReceipt = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -52,7 +66,13 @@ function Inner({ userId: _userId, householdId, role }: { userId: string; househo
       qc.invalidateQueries({ queryKey: ["receipts", householdId] });
       toast.success(isEnglish ? "Receipt added" : "Dodano paragon");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : isEnglish ? "Could not add receipt" : "Nie udało się dodać paragonu");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : isEnglish
+            ? "Could not add receipt"
+            : "Nie udało się dodać paragonu",
+      );
     } finally {
       setBusy(false);
     }
@@ -75,16 +95,46 @@ function Inner({ userId: _userId, householdId, role }: { userId: string; househo
         </p>
         {canAdd && (
           <form onSubmit={addReceipt} className="mt-4 space-y-3">
-            <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="w-full px-3 py-3 rounded-xl bg-muted">
+            <select
+              value={storeId}
+              onChange={(e) => setStoreId(e.target.value)}
+              className="w-full px-3 py-3 rounded-xl bg-muted"
+            >
               <option value="">{isEnglish ? "Unknown store" : "Sklep nieznany"}</option>
-              {(storesQ.data ?? []).map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+              {(storesQ.data ?? []).map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name}
+                </option>
+              ))}
             </select>
             <div className="grid grid-cols-2 gap-2">
-              <input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} className="min-w-0 px-3 py-3 rounded-xl bg-muted" />
-              <input type="number" min="0" step="0.01" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} placeholder={isEnglish ? "Total" : "Suma"} className="min-w-0 px-3 py-3 rounded-xl bg-muted" />
+              <input
+                type="date"
+                value={receiptDate}
+                onChange={(e) => setReceiptDate(e.target.value)}
+                className="min-w-0 px-3 py-3 rounded-xl bg-muted"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={totalAmount}
+                onChange={(e) => setTotalAmount(e.target.value)}
+                placeholder={isEnglish ? "Total" : "Suma"}
+                className="min-w-0 px-3 py-3 rounded-xl bg-muted"
+              />
             </div>
-            <button disabled={busy} className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-60">
-              {busy ? (isEnglish ? "Adding…" : "Dodaję…") : (isEnglish ? "Add receipt" : "Dodaj paragon")}
+            <button
+              disabled={busy}
+              className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-60"
+            >
+              {busy
+                ? isEnglish
+                  ? "Adding…"
+                  : "Dodaję…"
+                : isEnglish
+                  ? "Add receipt"
+                  : "Dodaj paragon"}
             </button>
           </form>
         )}
@@ -97,10 +147,15 @@ function Inner({ userId: _userId, householdId, role }: { userId: string; househo
               <ReceiptText className="w-5 h-5 text-muted-foreground" />
               <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">
-                  {receipt.store_id ? storeName.get(receipt.store_id) || (isEnglish ? "Store" : "Sklep") : isEnglish ? "Unknown store" : "Sklep nieznany"}
+                  {receipt.store_id
+                    ? storeName.get(receipt.store_id) || (isEnglish ? "Store" : "Sklep")
+                    : isEnglish
+                      ? "Unknown store"
+                      : "Sklep nieznany"}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {receipt.receipt_date || (isEnglish ? "Unknown date" : "Data nieznana")} · {formatPrice(receipt.total_amount)}
+                  {receipt.receipt_date || (isEnglish ? "Unknown date" : "Data nieznana")} ·{" "}
+                  {formatPrice(receipt.total_amount)}
                 </div>
               </div>
               <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
@@ -111,7 +166,9 @@ function Inner({ userId: _userId, householdId, role }: { userId: string; househo
         ))}
         {!receiptsQ.isLoading && (receiptsQ.data?.length ?? 0) === 0 && (
           <li className="text-center py-10 text-sm text-muted-foreground">
-            {isEnglish ? "No receipts have been added yet." : "Nie dodano jeszcze żadnego paragonu."}
+            {isEnglish
+              ? "No receipts have been added yet."
+              : "Nie dodano jeszcze żadnego paragonu."}
           </li>
         )}
       </ul>

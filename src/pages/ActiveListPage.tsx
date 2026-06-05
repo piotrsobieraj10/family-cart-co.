@@ -4,7 +4,12 @@ import { Link } from "@tanstack/react-router";
 import { Check, RotateCcw, Search, ShoppingCart, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { CATEGORY_EMOJI } from "@/lib/categories";
-import { canAddItems, canChangeItemStatus, canManageHousehold, type HouseholdRole } from "@/lib/permissions";
+import {
+  canAddItems,
+  canChangeItemStatus,
+  canManageHousehold,
+  type HouseholdRole,
+} from "@/lib/permissions";
 import { findActiveList } from "@/lib/shopping";
 import { formatPrice } from "@/lib/products";
 import { notifyHousehold } from "@/lib/push";
@@ -156,7 +161,12 @@ export function ActiveListPage({
       void notifyHousehold({
         householdId,
         type: status === "bought" ? "item_bought" : "item_added",
-        body: status === "bought" ? (isEnglish ? `Bought: ${item.name}` : `Kupiono: ${item.name}`) : item.name,
+        body:
+          status === "bought"
+            ? isEnglish
+              ? `Bought: ${item.name}`
+              : `Kupiono: ${item.name}`
+            : item.name,
         listId: item.list_id,
         itemId: item.id,
         url: "/",
@@ -180,9 +190,23 @@ export function ActiveListPage({
     const status = hasActive ? "partially_done" : "done";
     try {
       await finishShoppingFn({ data: { listId, householdId, status } });
-      void notifyHousehold({ householdId, type: "shopping_finished", body: isEnglish ? "Shopping finished" : "Zakończono zakupy", listId, url: "/" });
+      void notifyHousehold({
+        householdId,
+        type: "shopping_finished",
+        body: isEnglish ? "Shopping finished" : "Zakończono zakupy",
+        listId,
+        url: "/",
+      });
       setShoppingMode(false);
-      toast.success(isEnglish ? (status === "done" ? "Everything bought!" : "Shopping finished") : (status === "done" ? "Wszystko kupione!" : "Zakończono zakupy"));
+      toast.success(
+        isEnglish
+          ? status === "done"
+            ? "Everything bought!"
+            : "Shopping finished"
+          : status === "done"
+            ? "Wszystko kupione!"
+            : "Zakończono zakupy",
+      );
       qc.invalidateQueries({ queryKey: ["active-list", householdId] });
       qc.invalidateQueries({ queryKey: ["items", listId] });
     } catch (e) {
@@ -195,7 +219,10 @@ export function ActiveListPage({
       title={t("shoppingList")}
       right={
         canAddItems(role) ? (
-          <Link to="/add" className="px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-medium">
+          <Link
+            to="/add"
+            className="px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-medium"
+          >
             + {t("add")}
           </Link>
         ) : null
@@ -207,32 +234,81 @@ export function ActiveListPage({
             <section className="bg-card border border-border rounded-2xl p-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-xs text-muted-foreground">{isEnglish ? "Estimated value" : "Szacowana wartość"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {isEnglish ? "Estimated value" : "Szacowana wartość"}
+                  </div>
                   <div className="text-lg font-semibold">{formatPrice(estimatedTotal)}</div>
-                  <div className="text-xs text-muted-foreground">{isEnglish ? `Prices: ${pricedCount} of ${items.length} products` : `Ceny: ${pricedCount} z ${items.length} produktów`}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {isEnglish
+                      ? `Prices: ${pricedCount} of ${items.length} products`
+                      : `Ceny: ${pricedCount} z ${items.length} produktów`}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">{isEnglish ? "Remaining budget" : "Pozostało z budżetu"}</div>
-                  <div className={`text-lg font-semibold ${remaining != null && remaining < 0 ? "text-destructive" : ""}`}>
-                    {remaining == null ? (isEnglish ? "No budget" : "Brak budżetu") : formatPrice(remaining)}
+                  <div className="text-xs text-muted-foreground">
+                    {isEnglish ? "Remaining budget" : "Pozostało z budżetu"}
                   </div>
-                  <div className="text-xs text-muted-foreground">{isEnglish ? "Budget" : "Budżet"}: {budget == null ? (isEnglish ? "not set" : "nie ustawiono") : formatPrice(budget)}</div>
+                  <div
+                    className={`text-lg font-semibold ${remaining != null && remaining < 0 ? "text-destructive" : ""}`}
+                  >
+                    {remaining == null
+                      ? isEnglish
+                        ? "No budget"
+                        : "Brak budżetu"
+                      : formatPrice(remaining)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {isEnglish ? "Budget" : "Budżet"}:{" "}
+                    {budget == null
+                      ? isEnglish
+                        ? "not set"
+                        : "nie ustawiono"
+                      : formatPrice(budget)}
+                  </div>
                 </div>
               </div>
               <label className="mt-3 flex items-center justify-between gap-3 text-sm">
-                <span>{isEnglish ? "Group products by store" : "Grupuj produkty według sklepu"}</span>
-                <input type="checkbox" checked={groupByStore} onChange={(e) => setGroupByStore(e.target.checked)} className="w-5 h-5 accent-primary" />
+                <span>
+                  {isEnglish ? "Group products by store" : "Grupuj produkty według sklepu"}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={groupByStore}
+                  onChange={(e) => setGroupByStore(e.target.checked)}
+                  className="w-5 h-5 accent-primary"
+                />
               </label>
               {canManageHousehold(role) && (
                 <div className="mt-3 pt-3 border-t border-border space-y-2">
                   <div className="grid grid-cols-2 gap-2">
-                    <input type="number" min="0" step="0.01" value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} placeholder={isEnglish ? "List budget" : "Budżet listy"} className="min-w-0 px-3 py-2 rounded-xl bg-muted" />
-                    <select value={defaultStoreId} onChange={(e) => setDefaultStoreId(e.target.value)} className="min-w-0 px-3 py-2 rounded-xl bg-muted">
-                      <option value="">{isEnglish ? "No default store" : "Bez domyślnego sklepu"}</option>
-                      {(storesQuery.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={budgetAmount}
+                      onChange={(e) => setBudgetAmount(e.target.value)}
+                      placeholder={isEnglish ? "List budget" : "Budżet listy"}
+                      className="min-w-0 px-3 py-2 rounded-xl bg-muted"
+                    />
+                    <select
+                      value={defaultStoreId}
+                      onChange={(e) => setDefaultStoreId(e.target.value)}
+                      className="min-w-0 px-3 py-2 rounded-xl bg-muted"
+                    >
+                      <option value="">
+                        {isEnglish ? "No default store" : "Bez domyślnego sklepu"}
+                      </option>
+                      {(storesQuery.data ?? []).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
-                  <button onClick={saveListSettings} className="w-full py-2 rounded-xl bg-muted text-sm font-medium">
+                  <button
+                    onClick={saveListSettings}
+                    className="w-full py-2 rounded-xl bg-muted text-sm font-medium"
+                  >
                     {isEnglish ? "Save budget and default store" : "Zapisz budżet i domyślny sklep"}
                   </button>
                 </div>
@@ -242,24 +318,39 @@ export function ActiveListPage({
 
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={isEnglish ? "Search…" : "Szukaj…"} className="w-full pl-10 pr-3 py-3 rounded-2xl bg-card border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={isEnglish ? "Search…" : "Szukaj…"}
+              className="w-full pl-10 pr-3 py-3 rounded-2xl bg-card border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
           </div>
 
           <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
             {[
               { v: "active", label: `${isEnglish ? "To buy" : "Do kupienia"} · ${counts.active}` },
               { v: "bought", label: `${isEnglish ? "Bought" : "Kupione"} · ${counts.bought}` },
-              { v: "unavailable", label: `${isEnglish ? "Unavailable" : "Niedostępne"} · ${counts.unavailable}` },
+              {
+                v: "unavailable",
+                label: `${isEnglish ? "Unavailable" : "Niedostępne"} · ${counts.unavailable}`,
+              },
               { v: "all", label: isEnglish ? "All" : "Wszystko" },
             ].map((f) => (
-              <button key={f.v} onClick={() => setFilter(f.v as Filter)} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filter === f.v ? "bg-foreground text-background border-foreground" : "bg-card border-border text-muted-foreground"}`}>
+              <button
+                key={f.v}
+                onClick={() => setFilter(f.v as Filter)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filter === f.v ? "bg-foreground text-background border-foreground" : "bg-card border-border text-muted-foreground"}`}
+              >
                 {f.label}
               </button>
             ))}
           </div>
 
           {canChangeItemStatus(role) && (
-            <button onClick={() => setShoppingMode(true)} className="w-full py-3 rounded-2xl bg-accent text-accent-foreground font-semibold flex items-center justify-center gap-2 shadow-sm active:scale-[0.99]">
+            <button
+              onClick={() => setShoppingMode(true)}
+              className="w-full py-3 rounded-2xl bg-accent text-accent-foreground font-semibold flex items-center justify-center gap-2 shadow-sm active:scale-[0.99]"
+            >
               <ShoppingCart className="w-5 h-5" />
               {isEnglish ? "Start shopping" : "Rozpocznij zakupy"}
             </button>
@@ -269,8 +360,12 @@ export function ActiveListPage({
 
       {shoppingMode && (
         <div className="flex items-center justify-between mb-3">
-          <button onClick={() => setShoppingMode(false)} className="text-sm text-muted-foreground">← {isEnglish ? "Exit store mode" : "Wyjdź z trybu sklepu"}</button>
-          <span className="text-xs px-2 py-1 rounded-full bg-accent/15 text-accent">{isEnglish ? "Store mode" : "Tryb sklepu"}</span>
+          <button onClick={() => setShoppingMode(false)} className="text-sm text-muted-foreground">
+            ← {isEnglish ? "Exit store mode" : "Wyjdź z trybu sklepu"}
+          </button>
+          <span className="text-xs px-2 py-1 rounded-full bg-accent/15 text-accent">
+            {isEnglish ? "Store mode" : "Tryb sklepu"}
+          </span>
         </div>
       )}
 
@@ -278,8 +373,12 @@ export function ActiveListPage({
         {visible.length === 0 && (
           <li className="text-center py-12 text-muted-foreground text-sm">
             {items.length === 0
-              ? isEnglish ? "The list is empty. Add the first product." : "Lista jest pusta. Dodaj pierwszy produkt."
-              : isEnglish ? "Nothing here." : "Nic tu nie ma."}
+              ? isEnglish
+                ? "The list is empty. Add the first product."
+                : "Lista jest pusta. Dodaj pierwszy produkt."
+              : isEnglish
+                ? "Nothing here."
+                : "Nic tu nie ma."}
           </li>
         )}
         {visible.map((it, index) => {
@@ -287,19 +386,37 @@ export function ActiveListPage({
           const isUnavailable = it.status === "unavailable";
           const currentStoreName = it.store_id
             ? storeName.get(it.store_id) || (isEnglish ? "Store" : "Sklep")
-            : isEnglish ? "No store" : "Bez sklepu";
+            : isEnglish
+              ? "No store"
+              : "Bez sklepu";
           const previousItem = visible[index - 1];
           const previousStoreName = previousItem
-            ? previousItem.store_id ? storeName.get(previousItem.store_id) || (isEnglish ? "Store" : "Sklep") : isEnglish ? "No store" : "Bez sklepu"
+            ? previousItem.store_id
+              ? storeName.get(previousItem.store_id) || (isEnglish ? "Store" : "Sklep")
+              : isEnglish
+                ? "No store"
+                : "Bez sklepu"
             : null;
           return (
             <Fragment key={it.id}>
               {groupByStore && currentStoreName !== previousStoreName && (
-                <li className="pt-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{currentStoreName}</li>
+                <li className="pt-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {currentStoreName}
+                </li>
               )}
-              <li className={`bg-card rounded-2xl border border-border p-3 flex items-center gap-3 ${isBought ? "opacity-60" : ""}`}>
+              <li
+                className={`bg-card rounded-2xl border border-border p-3 flex items-center gap-3 ${isBought ? "opacity-60" : ""}`}
+              >
                 <button
-                  aria-label={isBought ? (isEnglish ? "Undo check" : "Cofnij odhaczenie") : (isEnglish ? "Mark as bought" : "Oznacz jako kupione")}
+                  aria-label={
+                    isBought
+                      ? isEnglish
+                        ? "Undo check"
+                        : "Cofnij odhaczenie"
+                      : isEnglish
+                        ? "Mark as bought"
+                        : "Oznacz jako kupione"
+                  }
                   onClick={() => setStatus(it, isBought ? "active" : "bought")}
                   disabled={!canChangeItemStatus(role)}
                   className={`shrink-0 ${shoppingMode ? "w-12 h-12" : "w-9 h-9"} rounded-full border-2 flex items-center justify-center transition-all ${isBought ? "bg-success border-success text-success-foreground" : "border-border bg-background"}`}
@@ -307,18 +424,32 @@ export function ActiveListPage({
                   {isBought && <Check className={shoppingMode ? "w-6 h-6" : "w-5 h-5"} />}
                 </button>
 
-                <Link to="/item/$id" params={{ id: it.id }} className="flex-1 min-w-0 flex items-center gap-3">
+                <Link
+                  to="/item/$id"
+                  params={{ id: it.id }}
+                  className="flex-1 min-w-0 flex items-center gap-3"
+                >
                   <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center text-xl">
                     {it.category ? (CATEGORY_EMOJI[it.category] ?? "📦") : "📦"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className={`font-medium truncate ${isBought ? "line-through" : ""}`}>{it.name}</div>
+                    <div className={`font-medium truncate ${isBought ? "line-through" : ""}`}>
+                      {it.name}
+                    </div>
                     <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                      {it.quantity != null && <span>{it.quantity} {it.unit ?? ""}</span>}
+                      {it.quantity != null && (
+                        <span>
+                          {it.quantity} {it.unit ?? ""}
+                        </span>
+                      )}
                       {it.category && <span>· {it.category}</span>}
                       <span>· {currentStoreName}</span>
                       <span>· {formatPrice(it.estimated_unit_price)}</span>
-                      {isUnavailable && <span className="text-warning">· {isEnglish ? "unavailable" : "niedostępne"}</span>}
+                      {isUnavailable && (
+                        <span className="text-warning">
+                          · {isEnglish ? "unavailable" : "niedostępne"}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </Link>
@@ -341,7 +472,10 @@ export function ActiveListPage({
 
       {shoppingMode && (
         <div className="fixed bottom-20 inset-x-0 px-4 max-w-md mx-auto z-30">
-          <button onClick={finishShopping} className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-semibold shadow-lg flex items-center justify-center gap-2">
+          <button
+            onClick={finishShopping}
+            className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-semibold shadow-lg flex items-center justify-center gap-2"
+          >
             <Check className="w-5 h-5" />
             {isEnglish ? "Shopping done" : "Zakupy zrobione"}
           </button>

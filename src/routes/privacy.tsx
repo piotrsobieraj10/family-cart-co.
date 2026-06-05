@@ -115,7 +115,6 @@ function PrivacyPage() {
           </p>
         </PrivacySection>
 
-
         <PrivacySection title="7. Powiadomienia push">
           <p>
             Użytkownik może dobrowolnie włączyć powiadomienia push. W tym celu aplikacja może

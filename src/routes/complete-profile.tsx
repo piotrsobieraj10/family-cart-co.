@@ -30,7 +30,11 @@ function Inner({ userId }: { userId: string }) {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (password.length < 6)
-      return toast.error(isEnglish ? "New password must have at least 6 characters" : "Nowe hasło musi mieć co najmniej 6 znaków");
+      return toast.error(
+        isEnglish
+          ? "New password must have at least 6 characters"
+          : "Nowe hasło musi mieć co najmniej 6 znaków",
+      );
     if (password !== repeatPassword)
       return toast.error(isEnglish ? "Passwords do not match" : "Hasła nie są takie same");
     setBusy(true);
@@ -46,14 +50,22 @@ function Inner({ userId }: { userId: string }) {
         },
       });
       if (!result.ok) {
-        toast.error(result.error ?? (isEnglish ? "Could not save details" : "Nie udało się zapisać danych"));
+        toast.error(
+          result.error ?? (isEnglish ? "Could not save details" : "Nie udało się zapisać danych"),
+        );
         return;
       }
       await qc.invalidateQueries({ queryKey: ["profile", userId] });
       toast.success(isEnglish ? "Account details completed" : "Dane konta zostały uzupełnione");
       navigate({ to: "/", replace: true });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : (isEnglish ? "Could not save details" : "Nie udało się zapisać danych"));
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : isEnglish
+            ? "Could not save details"
+            : "Nie udało się zapisać danych",
+      );
     } finally {
       setBusy(false);
     }
@@ -109,7 +121,13 @@ function Inner({ userId }: { userId: string }) {
             disabled={busy}
             className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold disabled:opacity-60"
           >
-            {busy ? (isEnglish ? "Saving…" : "Zapisuję…") : (isEnglish ? "Save and continue" : "Zapisz i przejdź dalej")}
+            {busy
+              ? isEnglish
+                ? "Saving…"
+                : "Zapisuję…"
+              : isEnglish
+                ? "Save and continue"
+                : "Zapisz i przejdź dalej"}
           </button>
         </form>
       </div>

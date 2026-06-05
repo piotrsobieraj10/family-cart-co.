@@ -26,7 +26,8 @@ Deno.serve(async (request) => {
     const p256dh = String(body.p256dh ?? "");
     const auth = String(body.auth ?? "");
     const userAgent = body.user_agent ? String(body.user_agent).slice(0, 500) : null;
-    const preferences = typeof body.preferences === "object" && body.preferences ? body.preferences : {};
+    const preferences =
+      typeof body.preferences === "object" && body.preferences ? body.preferences : {};
 
     if (!householdId || !endpoint || !p256dh || !auth) {
       throw new Error("Brakuje danych subskrypcji push");

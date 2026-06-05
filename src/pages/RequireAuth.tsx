@@ -97,7 +97,11 @@ export function RequireAuth({
     }
     return (
       <>
-        {children({ userId: user.id, householdId: membership.household_id, role: membership.role as HouseholdRole })}
+        {children({
+          userId: user.id,
+          householdId: membership.household_id,
+          role: membership.role as HouseholdRole,
+        })}
       </>
     );
   }

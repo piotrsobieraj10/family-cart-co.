@@ -8,7 +8,7 @@ const AUDIENCE = "family-cart-app";
 const EXPIRY = "30d";
 
 export interface SessionPayload {
-  sub: string;       // user id
+  sub: string; // user id
   email: string;
 }
 

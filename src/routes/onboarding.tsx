@@ -37,7 +37,13 @@ function Inner({ userId: _userId }: { userId: string }) {
       );
       navigate({ to: "/", replace: true });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : (isEnglish ? "Failed to create household" : "Nie udało się utworzyć domu"));
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : isEnglish
+            ? "Failed to create household"
+            : "Nie udało się utworzyć domu",
+      );
     } finally {
       setBusy(false);
     }
@@ -70,7 +76,7 @@ function Inner({ userId: _userId }: { userId: string }) {
             disabled={busy}
             className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold disabled:opacity-60"
           >
-            {busy ? (isEnglish ? "Creating…" : "Tworzę…") : (isEnglish ? "Create" : "Utwórz")}
+            {busy ? (isEnglish ? "Creating…" : "Tworzę…") : isEnglish ? "Create" : "Utwórz"}
           </button>
         </form>
       </div>

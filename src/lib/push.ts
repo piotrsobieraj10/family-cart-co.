@@ -93,7 +93,7 @@ export async function getExistingPushSubscription() {
 
 export async function subscribeToPush(_householdId: string, _preferences?: PushPreferences) {
   throw new Error(
-    "Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY. Funkcja dostępna w pełnej konfiguracji."
+    "Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY. Funkcja dostępna w pełnej konfiguracji.",
   );
 }
 
@@ -102,7 +102,9 @@ export async function unsubscribeFromPush(_householdId: string) {
   if (subscription) await subscription.unsubscribe();
 }
 
-export async function loadPushPreferences(_householdId: string): Promise<Required<PushPreferences>> {
+export async function loadPushPreferences(
+  _householdId: string,
+): Promise<Required<PushPreferences>> {
   return getDefaultPushPreferences();
 }
 
@@ -110,9 +112,9 @@ export async function updatePushPreferences(_householdId: string, _preferences: 
   throw new Error("Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY.");
 }
 
-export async function sendTestPush(_householdId: string) {
+export async function sendTestPush(_householdId: string): Promise<{ sent: number }> {
   throw new Error(
-    "Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY i wdrożenia Edge Functions."
+    "Push notifications wymagają konfiguracji VAPID_PRIVATE_KEY i wdrożenia Edge Functions.",
   );
 }
 

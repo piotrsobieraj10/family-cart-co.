@@ -22,7 +22,15 @@ function HistoryPage() {
   );
 }
 
-function Inner({ householdId, userId, role }: { householdId: string; userId: string; role?: HouseholdRole }) {
+function Inner({
+  householdId,
+  userId,
+  role,
+}: {
+  householdId: string;
+  userId: string;
+  role?: HouseholdRole;
+}) {
   const qc = useQueryClient();
   const { language, t } = useI18n();
   const isEnglish = language === "en";
@@ -32,8 +40,14 @@ function Inner({ householdId, userId, role }: { householdId: string; userId: str
     queryFn: () => getHistoryFn({ data: { householdId } }),
   });
 
-  const reAdd = async (item: { name: string; category: string | null; quantity: number | null; unit: string | null }) => {
-    if (!canAddItems(role)) return toast.error(isEnglish ? "You have view-only access" : "Masz dostęp tylko do podglądu");
+  const reAdd = async (item: {
+    name: string;
+    category: string | null;
+    quantity: number | null;
+    unit: string | null;
+  }) => {
+    if (!canAddItems(role))
+      return toast.error(isEnglish ? "You have view-only access" : "Masz dostęp tylko do podglądu");
     try {
       const list = await ensureActiveList(householdId, userId);
       await addItemFn({
@@ -62,7 +76,10 @@ function Inner({ householdId, userId, role }: { householdId: string; userId: str
           </li>
         )}
         {data?.map((it) => (
-          <li key={it.id} className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
+          <li
+            key={it.id}
+            className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3"
+          >
             <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
               {it.category ? (CATEGORY_EMOJI[it.category] ?? "📦") : "📦"}
             </div>
@@ -70,11 +87,16 @@ function Inner({ householdId, userId, role }: { householdId: string; userId: str
               <div className="font-medium truncate">{it.name}</div>
               <div className="text-xs text-muted-foreground">
                 {it.quantity != null ? `${it.quantity} ${it.unit ?? ""} · ` : ""}
-                {it.bought_at ? new Date(it.bought_at).toLocaleDateString(isEnglish ? "en-US" : "pl-PL") : ""}
+                {it.bought_at
+                  ? new Date(it.bought_at).toLocaleDateString(isEnglish ? "en-US" : "pl-PL")
+                  : ""}
               </div>
             </div>
             {canAddItems(role) && (
-              <button onClick={() => reAdd(it)} className="text-primary text-xs font-medium flex items-center gap-1">
+              <button
+                onClick={() => reAdd(it)}
+                className="text-primary text-xs font-medium flex items-center gap-1"
+              >
                 <RotateCcw className="w-4 h-4" /> {t("add")}
               </button>
             )}
