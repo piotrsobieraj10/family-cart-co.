@@ -1,743 +1,608 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getSupabaseAdminClient } from "@/integrations/supabase/client.server";
-import { requireUserFromRequest } from "@/lib/auth.server";
+import { getDb } from "@/integrations/db";
+import { getRequestHeader } from "@tanstack/start-server-core";
+import { verifyToken } from "@/lib/auth.server";
 
-type HouseholdRole = "owner" | "admin" | "member" | "viewer";
-type HouseholdMemberRow = {
-  id: string;
-  user_id: string;
-  role: HouseholdRole;
-  status: string;
-  label: string | null;
-  profiles?:
-    | {
-        display_name: string | null;
-        email: string | null;
-      }
-    | Array<{
-        display_name: string | null;
-        email: string | null;
-      }>
-    | null;
-};
-
-function normalize(value: string) {
-  return value
-    .toLocaleLowerCase("pl-PL")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+// ── auth helper ────────────────────────────────────────────────────────────
+async function requireUser(): Promise<{ id: string; email: string }> {
+  const auth = getRequestHeader("authorization") ?? getRequestHeader("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) throw new Error("Unauthorized");
+  const payload = await verifyToken(token);
+  if (!payload) throw new Error("Unauthorized: invalid token");
+  return { id: payload.sub, email: payload.email };
 }
 
 async function requireHouseholdMember(userId: string, householdId: string, adminOnly = false) {
-  const { data, error } = await getSupabaseAdminClient()
-    .from("household_members")
-    .select("id, role")
-    .eq("user_id", userId)
-    .eq("household_id", householdId)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden: not a member");
-  if (adminOnly && !["owner", "admin"].includes(data.role)) {
-    throw new Error("Forbidden: not an admin");
-  }
-  return data as { id: string; role: HouseholdRole };
+  const sql = getDb();
+  const [m] = await sql<{ role: string }[]>`
+    SELECT role FROM household_members
+    WHERE user_id = ${userId} AND household_id = ${householdId} AND status = 'active' LIMIT 1
+  `;
+  if (!m) throw new Error("Forbidden: not a member");
+  if (adminOnly && !["owner", "admin"].includes(m.role)) throw new Error("Forbidden: not an admin");
+  return m;
 }
 
-async function findAuthUserByEmail(email: string) {
-  const admin = getSupabaseAdminClient();
-  let page = 1;
-  while (page < 20) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw new Error(error.message);
-    const found = data.users.find((user) => user.email?.toLowerCase() === email);
-    if (found) return found;
-    if (data.users.length < 1000) return null;
-    page += 1;
-  }
-  return null;
-}
-
+// ── HOUSEHOLDS ─────────────────────────────────────────────────────────────
 export const getHouseholdFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: household, error } = await getSupabaseAdminClient()
-      .from("households")
-      .select("id, name, owner_id")
-      .eq("id", data.householdId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    return household ?? null;
+    const sql = getDb();
+    const [hh] = await sql<{ id: string; name: string; owner_id: string }[]>`
+      SELECT id, name, owner_id FROM households WHERE id = ${data.householdId}
+    `;
+    return hh ?? null;
   });
 
 export const createHouseholdFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ name: z.string().min(1) }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
-    const admin = getSupabaseAdminClient();
-    const { data: household, error } = await admin
-      .from("households")
-      .insert({ name: data.name.trim(), owner_id: user.id })
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
-
-    const { error: memberError } = await admin.from("household_members").upsert(
-      {
-        household_id: household.id,
-        user_id: user.id,
-        role: "owner",
-        status: "active",
-        created_by: user.id,
-      },
-      { onConflict: "household_id,user_id" },
-    );
-    if (memberError) throw new Error(memberError.message);
-    return { id: household.id };
+    const user = await requireUser();
+    const sql = getDb();
+    const [hh] = await sql<{ id: string }[]>`
+      INSERT INTO households (name, owner_id) VALUES (${data.name.trim()}, ${user.id}) RETURNING id
+    `;
+    await sql`
+      INSERT INTO household_members (household_id, user_id, role, status, created_by)
+      VALUES (${hh.id}, ${user.id}, 'owner', 'active', ${user.id})
+    `;
+    return { id: hh.id };
   });
 
+// ── HOUSEHOLD MEMBERS ──────────────────────────────────────────────────────
 export const getHouseholdMembersFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: members, error } = await getSupabaseAdminClient()
-      .from("household_members")
-      .select("id, user_id, role, status, label, profiles(display_name, email)")
-      .eq("household_id", data.householdId)
-      .eq("status", "active")
-      .order("created_at", { ascending: true });
-    if (error) throw new Error(error.message);
-    return ((members ?? []) as HouseholdMemberRow[]).map((member) => ({
-      ...member,
-      display_name:
-        (Array.isArray(member.profiles) ? member.profiles[0] : member.profiles)?.display_name ??
-        null,
-      email: (Array.isArray(member.profiles) ? member.profiles[0] : member.profiles)?.email ?? null,
-    }));
+    const sql = getDb();
+    const rows = await sql<{
+      id: string; user_id: string; role: string; status: string; label: string | null;
+      display_name: string | null; email: string | null;
+    }[]>`
+      SELECT hm.id, hm.user_id, hm.role, hm.status, hm.label,
+             p.display_name, p.email
+      FROM household_members hm
+      LEFT JOIN profiles p ON p.user_id = hm.user_id
+      WHERE hm.household_id = ${data.householdId} AND hm.status = 'active'
+      ORDER BY hm.created_at
+    `;
+    return rows;
   });
 
 export const removeMemberFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ householdId: z.string(), memberId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
-    const admin = getSupabaseAdminClient();
-    const { data: member, error: readError } = await admin
-      .from("household_members")
-      .select("role")
-      .eq("id", data.memberId)
-      .eq("household_id", data.householdId)
-      .maybeSingle();
-    if (readError) throw new Error(readError.message);
-    if (member?.role === "owner") throw new Error("Owner cannot be removed.");
-
-    const { error } = await admin
-      .from("household_members")
-      .update({ status: "removed" })
-      .eq("id", data.memberId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`
+      UPDATE household_members SET status = 'removed'
+      WHERE id = ${data.memberId} AND household_id = ${data.householdId}
+    `;
     return { ok: true };
   });
 
 export const addHouseholdMemberFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      household_id: z.string(),
-      email: z.string().email(),
-      temporary_password: z.string().optional().default(""),
-      role: z.enum(["admin", "member", "viewer"]),
-      label: z.string().nullable().optional(),
-    }),
-  )
+  .inputValidator(z.object({
+    household_id: z.string(),
+    email: z.string().email(),
+    temporary_password: z.string().optional().default(""),
+    role: z.enum(["admin", "member", "viewer"]),
+    label: z.string().nullable().optional(),
+  }))
   .handler(async ({ data }) => {
-    const caller = await requireUserFromRequest();
+    const caller = await requireUser();
+    const sql = getDb();
     await requireHouseholdMember(caller.id, data.household_id, true);
-    const admin = getSupabaseAdminClient();
+
     const email = data.email.trim().toLowerCase();
-    const existingUser = await findAuthUserByEmail(email);
 
-    let userId = existingUser?.id;
-    let created = false;
+    // Find existing user
+    const [existingUser] = await sql<{ id: string }[]>`
+      SELECT id FROM users WHERE lower(email) = ${email} LIMIT 1
+    `;
 
-    if (!userId) {
+    let userId: string;
+
+    if (existingUser) {
+      userId = existingUser.id;
+    } else {
       if (!data.temporary_password || data.temporary_password.length < 6) {
-        return {
-          ok: false,
-          code: "temporary_password_required",
-          error: "Ten e-mail nie istnieje w systemie. Podaj haslo tymczasowe (min. 6 znakow).",
-        };
+        return { ok: false, code: "temporary_password_required", error: "Ten e-mail nie istnieje w systemie. Podaj hasło tymczasowe (min. 6 znaków)." };
       }
-      const { data: createdUser, error } = await admin.auth.admin.createUser({
-        email,
-        password: data.temporary_password,
-        email_confirm: true,
-        user_metadata: { display_name: email.split("@")[0] },
-      });
-      if (error || !createdUser.user) {
-        return { ok: false, error: error?.message ?? "Nie udalo sie utworzyc uzytkownika." };
-      }
-      userId = createdUser.user.id;
-      created = true;
-      await admin.from("profiles").upsert(
-        {
-          user_id: userId,
-          email,
-          display_name: email.split("@")[0],
-          must_complete_profile: true,
-          must_change_password: true,
-        },
-        { onConflict: "user_id" },
-      );
+      const { hashPassword } = await import("@/lib/auth.server");
+      const hash = await hashPassword(data.temporary_password);
+      const [newUser] = await sql<{ id: string }[]>`
+        INSERT INTO users (email, password_hash) VALUES (${email}, ${hash}) RETURNING id
+      `;
+      await sql`
+        INSERT INTO profiles (user_id, email, display_name, must_complete_profile, must_change_password)
+        VALUES (${newUser.id}, ${email}, ${email.split("@")[0]}, true, true)
+      `;
+      userId = newUser.id;
     }
 
-    const { data: existing, error: membershipReadError } = await admin
-      .from("household_members")
-      .select("id, status")
-      .eq("household_id", data.household_id)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (membershipReadError) return { ok: false, error: membershipReadError.message };
+    // Check existing membership
+    const [existing] = await sql<{ id: string; status: string }[]>`
+      SELECT id, status FROM household_members
+      WHERE household_id = ${data.household_id} AND user_id = ${userId} LIMIT 1
+    `;
 
     if (existing?.status === "active") {
       return { ok: true, code: "already_member", created: false, user_id: userId };
     }
 
-    const payload = {
-      household_id: data.household_id,
-      user_id: userId,
-      role: data.role,
-      status: "active",
-      created_by: caller.id,
-      label: data.label ?? null,
-    };
-    const query = existing
-      ? admin.from("household_members").update(payload).eq("id", existing.id)
-      : admin.from("household_members").insert(payload);
-    const { error } = await query;
-    if (error) return { ok: false, error: error.message };
+    if (existing) {
+      await sql`
+        UPDATE household_members SET role = ${data.role}, status = 'active', label = ${data.label ?? null}
+        WHERE id = ${existing.id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO household_members (household_id, user_id, role, status, created_by, label)
+        VALUES (${data.household_id}, ${userId}, ${data.role}, 'active', ${caller.id}, ${data.label ?? null})
+      `;
+    }
 
-    return { ok: true, created, user_id: userId };
+    return { ok: true, created: !existingUser, user_id: userId };
   });
 
+// ── STORES ─────────────────────────────────────────────────────────────────
 export const getStoresFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: stores, error } = await getSupabaseAdminClient()
-      .from("stores")
-      .select("id, name, normalized_name")
-      .eq("household_id", data.householdId)
-      .order("name");
-    if (error) throw new Error(error.message);
-    return stores ?? [];
+    const sql = getDb();
+    return sql<{ id: string; name: string; normalized_name: string }[]>`
+      SELECT id, name, normalized_name FROM stores
+      WHERE household_id = ${data.householdId}
+      ORDER BY name
+    `;
   });
 
 export const createStoreFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ householdId: z.string(), name: z.string().min(1) }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
-    await requireHouseholdMember(user.id, data.householdId, true);
+    const user = await requireUser();
+    await requireHouseholdMember(user.id, data.householdId);
+    const sql = getDb();
     const name = data.name.trim();
-    const { data: store, error } = await getSupabaseAdminClient()
-      .from("stores")
-      .upsert(
-        {
-          household_id: data.householdId,
-          name,
-          normalized_name: normalize(name),
-          created_by: user.id,
-        },
-        { onConflict: "household_id,normalized_name" },
-      )
-      .select("id, name")
-      .single();
-    if (error) throw new Error(error.message);
-    return store;
+    const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const [store] = await sql<{ id: string }[]>`
+      INSERT INTO stores (household_id, name, normalized_name, created_by)
+      VALUES (${data.householdId}, ${name}, ${normalized}, ${user.id})
+      ON CONFLICT (household_id, normalized_name) DO UPDATE SET name = EXCLUDED.name
+      RETURNING id
+    `;
+    return { id: store.id, name };
   });
 
 export const deleteStoreFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ storeId: z.string(), householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
-    const { error } = await getSupabaseAdminClient()
-      .from("stores")
-      .delete()
-      .eq("id", data.storeId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`DELETE FROM stores WHERE id = ${data.storeId} AND household_id = ${data.householdId}`;
     return { ok: true };
   });
 
+// ── SHOPPING LISTS ─────────────────────────────────────────────────────────
 export const getActiveListFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: lists, error } = await getSupabaseAdminClient()
-      .from("shopping_lists")
-      .select("id, status, default_store_id, budget_amount, estimated_total, actual_total")
-      .eq("household_id", data.householdId)
-      .in("status", ["active", "shopping", "partially_done"])
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (error) throw new Error(error.message);
-    return lists?.[0] ?? null;
+    const sql = getDb();
+    const [list] = await sql<{
+      id: string; status: string; default_store_id: string | null;
+      budget_amount: number | null; estimated_total: number | null; actual_total: number | null;
+    }[]>`
+      SELECT id, status, default_store_id, budget_amount, estimated_total, actual_total
+      FROM shopping_lists
+      WHERE household_id = ${data.householdId}
+        AND status IN ('active', 'shopping', 'partially_done')
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    return list ?? null;
   });
 
 export const ensureActiveListFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const existing = await getActiveListFn({ data: { householdId: data.householdId } });
+    const sql = getDb();
+
+    const [existing] = await sql<{ id: string; status: string }[]>`
+      SELECT id, status FROM shopping_lists
+      WHERE household_id = ${data.householdId}
+        AND status IN ('active', 'shopping', 'partially_done')
+      ORDER BY created_at DESC LIMIT 1
+    `;
     if (existing) return existing;
 
-    const { data: list, error } = await getSupabaseAdminClient()
-      .from("shopping_lists")
-      .insert({
-        household_id: data.householdId,
-        created_by: user.id,
-        name: "Lista zakupow",
-        status: "active",
-      })
-      .select("id, status, default_store_id, budget_amount, estimated_total, actual_total")
-      .single();
-    if (error) throw new Error(error.message);
+    const [list] = await sql<{ id: string; status: string }[]>`
+      INSERT INTO shopping_lists (household_id, created_by, name, status)
+      VALUES (${data.householdId}, ${user.id}, 'Lista zakupów', 'active')
+      RETURNING id, status
+    `;
     return list;
   });
 
+// ── SHOPPING ITEMS ─────────────────────────────────────────────────────────
 export const getShoppingItemsFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ listId: z.string(), householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: items, error } = await getSupabaseAdminClient()
-      .from("shopping_items")
-      .select(
-        "id, name, category, quantity, unit, note, status, store_id, estimated_unit_price, created_by:added_by, bought_by:checked_by, bought_at:checked_at",
-      )
-      .eq("list_id", data.listId)
-      .eq("household_id", data.householdId)
-      .neq("status", "deleted")
-      .order("created_at");
-    if (error) throw new Error(error.message);
-    return items ?? [];
+    const sql = getDb();
+    return sql<{
+      id: string; name: string; category: string | null; quantity: number | null;
+      unit: string | null; note: string | null; status: string; store_id: string | null;
+      estimated_unit_price: number | null; created_by: string | null; bought_by: string | null; bought_at: string | null;
+    }[]>`
+      SELECT id, name, category, quantity, unit, note, status, store_id,
+             estimated_unit_price, created_by, bought_by, bought_at
+      FROM shopping_items
+      WHERE list_id = ${data.listId} AND status != 'deleted'
+      ORDER BY created_at
+    `;
   });
 
 export const addItemFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      listId: z.string(),
-      householdId: z.string(),
-      name: z.string().min(1),
-      category: z.string().nullable().optional(),
-      quantity: z.number().nullable().optional(),
-      unit: z.string().nullable().optional(),
-      note: z.string().nullable().optional(),
-      store_id: z.string().nullable().optional(),
-      estimated_unit_price: z.number().nullable().optional(),
-    }),
-  )
+  .inputValidator(z.object({
+    listId: z.string(),
+    householdId: z.string(),
+    name: z.string().min(1),
+    category: z.string().nullable().optional(),
+    quantity: z.number().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+    store_id: z.string().nullable().optional(),
+    estimated_unit_price: z.number().nullable().optional(),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: item, error } = await getSupabaseAdminClient()
-      .from("shopping_items")
-      .insert({
-        list_id: data.listId,
-        household_id: data.householdId,
-        name: data.name.trim(),
-        category: data.category ?? null,
-        quantity: data.quantity ?? null,
-        unit: data.unit ?? null,
-        note: data.note ?? null,
-        store_id: data.store_id ?? null,
-        estimated_unit_price: data.estimated_unit_price ?? null,
-        added_by: user.id,
-      })
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    const [item] = await sql<{ id: string }[]>`
+      INSERT INTO shopping_items (list_id, household_id, name, category, quantity, unit, note, store_id, estimated_unit_price, created_by)
+      VALUES (
+        ${data.listId}, ${data.householdId}, ${data.name.trim()},
+        ${data.category ?? null}, ${data.quantity ?? null}, ${data.unit ?? null},
+        ${data.note ?? null}, ${data.store_id ?? null}, ${data.estimated_unit_price ?? null},
+        ${user.id}
+      ) RETURNING id
+    `;
     return { id: item.id };
   });
 
 export const updateItemStatusFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      itemId: z.string(),
-      householdId: z.string(),
-      status: z.enum(["active", "bought", "unavailable", "deleted"]),
-    }),
-  )
+  .inputValidator(z.object({
+    itemId: z.string(),
+    householdId: z.string(),
+    status: z.enum(["active", "bought", "unavailable", "deleted"]),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
+    const sql = getDb();
     const bought = data.status === "bought";
-    const { error } = await getSupabaseAdminClient()
-      .from("shopping_items")
-      .update({
-        status: data.status,
-        checked_by: bought ? user.id : null,
-        checked_at: bought ? new Date().toISOString() : null,
-      })
-      .eq("id", data.itemId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    await sql`
+      UPDATE shopping_items SET
+        status = ${data.status},
+        bought_by = ${bought ? user.id : null},
+        bought_at = ${bought ? new Date() : null},
+        updated_at = now()
+      WHERE id = ${data.itemId} AND household_id = ${data.householdId}
+    `;
     return { ok: true };
   });
 
 export const deleteItemFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ itemId: z.string(), householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { error } = await getSupabaseAdminClient()
-      .from("shopping_items")
-      .update({ status: "deleted" })
-      .eq("id", data.itemId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`
+      UPDATE shopping_items SET status = 'deleted', updated_at = now()
+      WHERE id = ${data.itemId} AND household_id = ${data.householdId}
+    `;
     return { ok: true };
   });
 
+// ── PRODUCT DICTIONARY ─────────────────────────────────────────────────────
 export const getDictionaryFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: rows, error } = await getSupabaseAdminClient()
-      .from("household_product_dictionary")
-      .select("id, phrase, normalized_phrase, category, default_store_id, barcode")
-      .eq("household_id", data.householdId)
-      .order("phrase");
-    if (error) throw new Error(error.message);
-    return rows ?? [];
+    const sql = getDb();
+    return sql<{
+      id: string; phrase: string; normalized_phrase: string; category: string | null;
+      default_store_id: string | null; barcode: string | null;
+    }[]>`
+      SELECT id, phrase, normalized_phrase, category, default_store_id, barcode
+      FROM household_product_dictionary
+      WHERE household_id = ${data.householdId}
+      ORDER BY phrase
+    `;
   });
 
+// ── RENAME HOUSEHOLD ───────────────────────────────────────────────────────
 export const renameHouseholdFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ householdId: z.string(), name: z.string().min(1) }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
-    const { error } = await getSupabaseAdminClient()
-      .from("households")
-      .update({ name: data.name.trim() })
-      .eq("id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`UPDATE households SET name = ${data.name.trim()}, updated_at = now() WHERE id = ${data.householdId}`;
     return { ok: true };
   });
 
+// ── CHANGE MEMBER ROLE ─────────────────────────────────────────────────────
 export const changeRoleFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      householdId: z.string(),
-      memberId: z.string(),
-      role: z.enum(["admin", "member", "viewer"]),
-    }),
-  )
+  .inputValidator(z.object({ householdId: z.string(), memberId: z.string(), role: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
-    const admin = getSupabaseAdminClient();
-    const { data: member, error: readError } = await admin
-      .from("household_members")
-      .select("role")
-      .eq("id", data.memberId)
-      .eq("household_id", data.householdId)
-      .maybeSingle();
-    if (readError) throw new Error(readError.message);
-    if (member?.role === "owner") throw new Error("Owner role cannot be changed here.");
-
-    const { error } = await admin
-      .from("household_members")
-      .update({ role: data.role })
-      .eq("id", data.memberId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`UPDATE household_members SET role = ${data.role} WHERE id = ${data.memberId} AND household_id = ${data.householdId}`;
     return { ok: true };
   });
 
+// ── GET SINGLE ITEM ────────────────────────────────────────────────────────
 export const getItemFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ itemId: z.string(), householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: item, error } = await getSupabaseAdminClient()
-      .from("shopping_items")
-      .select(
-        "id, list_id, name, category, quantity, unit, note, status, store_id, estimated_unit_price, created_by:added_by, bought_by:checked_by, bought_at:checked_at, created_at, updated_at",
-      )
-      .eq("id", data.itemId)
-      .eq("household_id", data.householdId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    const [item] = await sql<{
+      id: string; list_id: string; name: string; category: string | null;
+      quantity: number | null; unit: string | null; note: string | null; status: string;
+      store_id: string | null; estimated_unit_price: number | null;
+      created_by: string | null; bought_by: string | null; bought_at: string | null;
+      created_at: string; updated_at: string;
+    }[]>`
+      SELECT id, list_id, name, category, quantity, unit, note, status, store_id,
+             estimated_unit_price, created_by, bought_by, bought_at, created_at, updated_at
+      FROM shopping_items WHERE id = ${data.itemId} AND household_id = ${data.householdId}
+    `;
     return item ?? null;
   });
 
+// ── UPDATE ITEM ────────────────────────────────────────────────────────────
 export const updateItemFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      itemId: z.string(),
-      householdId: z.string(),
-      name: z.string().optional(),
-      category: z.string().nullable().optional(),
-      quantity: z.number().nullable().optional(),
-      unit: z.string().nullable().optional(),
-      note: z.string().nullable().optional(),
-      store_id: z.string().nullable().optional(),
-      estimated_unit_price: z.number().nullable().optional(),
-    }),
-  )
+  .inputValidator(z.object({
+    itemId: z.string(),
+    householdId: z.string(),
+    name: z.string().optional(),
+    category: z.string().nullable().optional(),
+    quantity: z.number().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+    store_id: z.string().nullable().optional(),
+    estimated_unit_price: z.number().nullable().optional(),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const patch: Record<string, unknown> = {};
-    if (data.name !== undefined) patch.name = data.name.trim();
-    if (data.category !== undefined) patch.category = data.category;
-    if (data.quantity !== undefined) patch.quantity = data.quantity;
-    if (data.unit !== undefined) patch.unit = data.unit;
-    if (data.note !== undefined) patch.note = data.note;
-    if (data.store_id !== undefined) patch.store_id = data.store_id;
-    if (data.estimated_unit_price !== undefined)
-      patch.estimated_unit_price = data.estimated_unit_price;
-    const { error } = await getSupabaseAdminClient()
-      .from("shopping_items")
-      .update(patch)
-      .eq("id", data.itemId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`
+      UPDATE shopping_items SET
+        name = COALESCE(${data.name ?? null}, name),
+        category = COALESCE(${data.category ?? null}, category),
+        quantity = ${data.quantity !== undefined ? data.quantity : null},
+        unit = ${data.unit !== undefined ? data.unit : null},
+        note = ${data.note !== undefined ? data.note : null},
+        store_id = ${data.store_id !== undefined ? data.store_id : null},
+        estimated_unit_price = ${data.estimated_unit_price !== undefined ? data.estimated_unit_price : null},
+        updated_at = now()
+      WHERE id = ${data.itemId} AND household_id = ${data.householdId}
+    `;
     return { ok: true };
   });
 
+// ── GET HISTORY (bought items) ─────────────────────────────────────────────
 export const getHistoryFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: items, error } = await getSupabaseAdminClient()
-      .from("shopping_items")
-      .select("id, name, category, quantity, unit, bought_at:checked_at, list_id")
-      .eq("household_id", data.householdId)
-      .eq("status", "bought")
-      .order("checked_at", { ascending: false, nullsFirst: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    return items ?? [];
+    const sql = getDb();
+    return sql<{
+      id: string; name: string; category: string | null; quantity: number | null;
+      unit: string | null; bought_at: string | null; list_id: string;
+    }[]>`
+      SELECT id, name, category, quantity, unit, bought_at, list_id
+      FROM shopping_items
+      WHERE household_id = ${data.householdId} AND status = 'bought'
+      ORDER BY bought_at DESC NULLS LAST
+      LIMIT 200
+    `;
   });
 
+// ── RECEIPTS ───────────────────────────────────────────────────────────────
 export const getReceiptsFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ householdId: z.string() }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: receipts, error } = await getSupabaseAdminClient()
-      .from("receipts")
-      .select("id, store_id, receipt_date, total_amount, ocr_status, created_at")
-      .eq("household_id", data.householdId)
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    return receipts ?? [];
+    const sql = getDb();
+    return sql<{
+      id: string; store_id: string | null; receipt_date: string | null;
+      total_amount: number | null; ocr_status: string | null; created_at: string;
+    }[]>`
+      SELECT id, store_id, receipt_date, total_amount, ocr_status, created_at
+      FROM receipts WHERE household_id = ${data.householdId}
+      ORDER BY created_at DESC
+    `;
   });
 
 export const addReceiptFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      householdId: z.string(),
-      store_id: z.string().nullable().optional(),
-      receipt_date: z.string().nullable().optional(),
-      total_amount: z.number().nullable().optional(),
-    }),
-  )
+  .inputValidator(z.object({
+    householdId: z.string(),
+    store_id: z.string().nullable().optional(),
+    receipt_date: z.string().nullable().optional(),
+    total_amount: z.number().nullable().optional(),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { data: receipt, error } = await getSupabaseAdminClient()
-      .from("receipts")
-      .insert({
-        household_id: data.householdId,
-        store_id: data.store_id ?? null,
-        receipt_date: data.receipt_date ?? null,
-        total_amount: data.total_amount ?? null,
-        ocr_status: "awaiting_review",
-        created_by: user.id,
-      })
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    const [receipt] = await sql<{ id: string }[]>`
+      INSERT INTO receipts (household_id, store_id, receipt_date, total_amount, ocr_status, created_by)
+      VALUES (${data.householdId}, ${data.store_id ?? null}, ${data.receipt_date ?? null},
+              ${data.total_amount ?? null}, 'awaiting_review', ${user.id})
+      RETURNING id
+    `;
     return { id: receipt.id };
   });
 
+// ── SAVE LIST SETTINGS ─────────────────────────────────────────────────────
 export const saveListSettingsFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      listId: z.string(),
-      householdId: z.string(),
-      budget_amount: z.number().nullable().optional(),
-      default_store_id: z.string().nullable().optional(),
-      estimated_total: z.number().nullable().optional(),
-    }),
-  )
+  .inputValidator(z.object({
+    listId: z.string(),
+    householdId: z.string(),
+    budget_amount: z.number().nullable().optional(),
+    default_store_id: z.string().nullable().optional(),
+    estimated_total: z.number().nullable().optional(),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
-    const { error } = await getSupabaseAdminClient()
-      .from("shopping_lists")
-      .update({
-        budget_amount: data.budget_amount ?? null,
-        default_store_id: data.default_store_id ?? null,
-        estimated_total: data.estimated_total ?? null,
-      })
-      .eq("id", data.listId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`
+      UPDATE shopping_lists SET
+        budget_amount = ${data.budget_amount ?? null},
+        default_store_id = ${data.default_store_id ?? null},
+        estimated_total = ${data.estimated_total ?? null},
+        updated_at = now()
+      WHERE id = ${data.listId} AND household_id = ${data.householdId}
+    `;
     return { ok: true };
   });
 
+// ── FINISH SHOPPING ────────────────────────────────────────────────────────
 export const finishShoppingFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      listId: z.string(),
-      householdId: z.string(),
-      status: z.enum(["done", "partially_done"]),
-    }),
-  )
+  .inputValidator(z.object({ listId: z.string(), householdId: z.string(), status: z.enum(["done", "partially_done"]) }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId, true);
-    const { error } = await getSupabaseAdminClient()
-      .from("shopping_lists")
-      .update({ status: data.status, completed_at: new Date().toISOString() })
-      .eq("id", data.listId)
-      .eq("household_id", data.householdId);
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`
+      UPDATE shopping_lists SET status = ${data.status}, completed_at = now(), updated_at = now()
+      WHERE id = ${data.listId} AND household_id = ${data.householdId}
+    `;
     return { ok: true };
   });
 
+// ── SAVE PRICE HISTORY ─────────────────────────────────────────────────────
 export const savePriceFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      householdId: z.string(),
-      storeId: z.string(),
-      productName: z.string().min(1),
-      category: z.string().nullable().optional(),
-      unit: z.string().nullable().optional(),
-      price: z.number().min(0),
-    }),
-  )
+  .inputValidator(z.object({
+    householdId: z.string(),
+    storeId: z.string(),
+    productName: z.string().min(1),
+    category: z.string().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    price: z.number().min(0),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const { error } = await getSupabaseAdminClient()
-      .from("product_price_history")
-      .insert({
-        household_id: data.householdId,
-        store_id: data.storeId,
-        product_name: data.productName.trim(),
-        normalized_product_name: normalize(data.productName),
-        category: data.category ?? null,
-        unit: data.unit ?? null,
-        price: data.price,
-        created_by: user.id,
-      });
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    const normalized = data.productName.toLowerCase().replace(/[^a-z0-9\s]+/g, " ").trim();
+    await sql`
+      INSERT INTO product_price_history
+        (household_id, store_id, product_name, normalized_product_name, category, unit, price, created_by)
+      VALUES (${data.householdId}, ${data.storeId}, ${data.productName.trim()}, ${normalized},
+              ${data.category ?? null}, ${data.unit ?? null}, ${data.price}, ${user.id})
+    `;
     return { ok: true };
   });
 
+// ── QUICK ADD (bulk items) ─────────────────────────────────────────────────
 export const quickAddItemsFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      householdId: z.string(),
-      listId: z.string(),
-      items: z.array(
-        z.object({
-          name: z.string().min(1),
-          quantity: z.number().nullable().optional(),
-          unit: z.string().nullable().optional(),
-          category: z.string().nullable().optional(),
-          store_id: z.string().nullable().optional(),
-        }),
-      ),
-    }),
-  )
+  .inputValidator(z.object({
+    householdId: z.string(),
+    listId: z.string(),
+    items: z.array(z.object({
+      name: z.string().min(1),
+      quantity: z.number().nullable().optional(),
+      unit: z.string().nullable().optional(),
+      category: z.string().nullable().optional(),
+      store_id: z.string().nullable().optional(),
+    })),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
-    const rows = data.items.map((item) => ({
-      list_id: data.listId,
-      household_id: data.householdId,
-      name: item.name.trim(),
-      quantity: item.quantity ?? null,
-      unit: item.unit ?? null,
-      category: item.category ?? null,
-      store_id: item.store_id ?? null,
-      added_by: user.id,
-    }));
-    const { error } = await getSupabaseAdminClient().from("shopping_items").insert(rows);
-    if (error) throw new Error(error.message);
-    return { ok: true, count: rows.length };
+    const sql = getDb();
+    for (const item of data.items) {
+      await sql`
+        INSERT INTO shopping_items (list_id, household_id, name, quantity, unit, category, store_id, created_by)
+        VALUES (${data.listId}, ${data.householdId}, ${item.name.trim()}, ${item.quantity ?? null},
+                ${item.unit ?? null}, ${item.category ?? null}, ${item.store_id ?? null}, ${user.id})
+      `;
+    }
+    return { ok: true, count: data.items.length };
   });
 
 export const upsertDictionaryEntryFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      householdId: z.string(),
-      phrase: z.string().min(1),
-      category: z.string().nullable().optional(),
-      default_store_id: z.string().nullable().optional(),
-      barcode: z.string().nullable().optional(),
-    }),
-  )
+  .inputValidator(z.object({
+    householdId: z.string(),
+    phrase: z.string().min(1),
+    category: z.string().nullable().optional(),
+    default_store_id: z.string().nullable().optional(),
+    barcode: z.string().nullable().optional(),
+  }))
   .handler(async ({ data }) => {
-    const user = await requireUserFromRequest();
+    const user = await requireUser();
     await requireHouseholdMember(user.id, data.householdId);
+    const sql = getDb();
     const phrase = data.phrase.trim();
-    const { data: entry, error } = await getSupabaseAdminClient()
-      .from("household_product_dictionary")
-      .upsert(
-        {
-          household_id: data.householdId,
-          phrase,
-          normalized_phrase: normalize(phrase),
-          category: data.category ?? null,
-          default_store_id: data.default_store_id ?? null,
-          barcode: data.barcode ?? null,
-          updated_by: user.id,
-          created_by: user.id,
-        },
-        { onConflict: "household_id,normalized_phrase" },
-      )
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
+    const normalized = phrase.toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+    const [entry] = await sql<{ id: string }[]>`
+      INSERT INTO household_product_dictionary
+        (household_id, phrase, normalized_phrase, category, default_store_id, barcode, updated_by)
+      VALUES (${data.householdId}, ${phrase}, ${normalized}, ${data.category ?? null},
+              ${data.default_store_id ?? null}, ${data.barcode ?? null}, ${user.id})
+      ON CONFLICT (household_id, normalized_phrase) DO UPDATE SET
+        phrase = EXCLUDED.phrase,
+        category = COALESCE(EXCLUDED.category, household_product_dictionary.category),
+        default_store_id = COALESCE(EXCLUDED.default_store_id, household_product_dictionary.default_store_id),
+        barcode = COALESCE(EXCLUDED.barcode, household_product_dictionary.barcode),
+        updated_by = EXCLUDED.updated_by,
+        updated_at = now()
+      RETURNING id
+    `;
     return { id: entry.id };
   });
 
 export const logActivityFn = createServerFn({ method: "POST" })
-  .inputValidator(
-    z.object({
-      household_id: z.string(),
-      user_id: z.string(),
-      action: z.string(),
-      description: z.string().optional(),
-      list_id: z.string().nullable().optional(),
-    }),
-  )
+  .inputValidator(z.object({
+    household_id: z.string(),
+    user_id: z.string(),
+    action: z.string(),
+    description: z.string().optional(),
+    list_id: z.string().nullable().optional(),
+    item_id: z.string().nullable().optional(),
+  }))
   .handler(async ({ data }) => {
-    const { error } = await getSupabaseAdminClient().from("activity_log").insert({
-      household_id: data.household_id,
-      user_id: data.user_id,
-      action: data.action,
-      description: data.description ?? null,
-      list_id: data.list_id ?? null,
-    });
-    if (error) throw new Error(error.message);
+    const sql = getDb();
+    await sql`
+      INSERT INTO activity_log (household_id, user_id, action, description, list_id, item_id)
+      VALUES (${data.household_id}, ${data.user_id}, ${data.action},
+              ${data.description ?? null}, ${data.list_id ?? null}, ${data.item_id ?? null})
+    `;
     return { ok: true };
   });

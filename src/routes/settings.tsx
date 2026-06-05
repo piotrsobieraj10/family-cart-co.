@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { RequireAuth } from "@/pages/RequireAuth";
-import { getHouseholdFn } from "@/lib/api/data.functions";
 import { getMyProfileFn } from "@/lib/api/auth.functions";
+import { getHouseholdFn } from "@/lib/api/data.functions";
 import { signOut } from "@/lib/auth";
 import { BrandFooter } from "@/components/Brand";
 import {
@@ -55,7 +55,7 @@ function Inner({ userId, householdId }: { userId: string; householdId: string })
   const { data: memberships } = useMyHouseholds(userId);
   const profileQ = useQuery({
     queryKey: ["profile", userId],
-    queryFn: () => getMyProfileFn({ data: { userId } }),
+    queryFn: () => getMyProfileFn(),
   });
   const householdQ = useQuery({
     queryKey: ["household", householdId],

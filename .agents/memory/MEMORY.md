@@ -2,3 +2,4 @@
 - [DB field names](db-field-names.md) — shopping_items: created_by/bought_by/bought_at (nie added_by/checked_by/checked_at); brak exact_match_required i price_observed_at
 - [Server function for adding household users](household-server-fn.md) — addHouseholdUser to re-eksport z data.functions.ts; household.functions.ts to stub
 - [TanStack Start dep optimization fix](tanstack-start-dep-fix.md) — exclude @tanstack/start-server-core from client dep scan; also requires Node.js >=22.12.0 (use nodejs-22 module)
+- [Auth attacher & vite plugin order](auth-attacher-vite.md) — auth-attacher używa getStoredToken; @vitejs/plugin-react musi być PO tanstackStart w plugins[]

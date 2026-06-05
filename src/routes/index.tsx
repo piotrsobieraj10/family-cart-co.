@@ -1,11 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ActiveListPage } from "@/pages/ActiveListPage";
-import { RequireAuth } from "@/pages/RequireAuth";
+import { createFileRoute } from '@tanstack/react-router'
 
-export const Route = createFileRoute("/")({
-  component: IndexRoute,
-});
+export const Route = createFileRoute('/')({
+  component: RouteComponent,
+})
 
-function IndexRoute() {
-  return <RequireAuth>{(ctx) => <ActiveListPage {...ctx} />}</RequireAuth>;
+function RouteComponent() {
+  return <div>Hello "/"!</div>
 }

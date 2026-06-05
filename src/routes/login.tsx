@@ -2,7 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth, storeToken, clearToken } from "@/lib/auth";
 import { loginFn, registerFn } from "@/lib/api/auth.functions";
-import { supabase } from "@/integrations/supabase/client";
 import { BrandFooter } from "@/components/Brand";
 import { toast } from "sonner";
 import { clearActiveHouseholdId } from "@/lib/household";
@@ -80,15 +79,7 @@ function LoginPage() {
           return;
         }
         console.log("[auth] login success");
-        if (!result.token || !result.refreshToken) {
-          toast.error("Supabase nie zwrocil kompletnej sesji.");
-          return;
-        }
-        await supabase.auth.setSession({
-          access_token: result.token,
-          refresh_token: result.refreshToken,
-        });
-        storeToken(result.token);
+        storeToken(result.token!);
         clearActiveHouseholdId();
         navigate({ to: "/", replace: true });
       }

@@ -1,9 +1,9 @@
 import { createMiddleware } from "@tanstack/react-start";
-import { getAccessToken } from "@/lib/auth";
+import { getStoredToken } from "@/lib/auth";
 
 export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
   async ({ next }) => {
-    const token = await getAccessToken();
+    const token = getStoredToken();
     return next({
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
