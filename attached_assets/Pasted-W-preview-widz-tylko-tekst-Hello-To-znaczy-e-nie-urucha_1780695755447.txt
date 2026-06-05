@@ -1,0 +1,82 @@
+W preview widzę tylko tekst:
+
+Hello "/"!
+
+To znaczy, że nie uruchamia się właściwa aplikacja Family Cart, tylko placeholder/default route.
+
+Napraw to bez przebudowy aplikacji od zera.
+
+Sprawdź:
+
+1. Routing TanStack Start
+- src/routes/__root.tsx
+- src/routes/index.tsx
+- src/routes/login.tsx
+- src/routeTree.gen.ts
+- src/main.tsx
+- src/start.ts albo entry pliki używane przez TanStack Start
+
+Upewnij się, że root route ładuje prawdziwy layout aplikacji Family Cart, a nie placeholder „Hello”.
+
+2. Usuń albo zastąp placeholder
+Znajdź w projekcie tekst:
+Hello "/"!
+Hello
+i sprawdź, który plik go renderuje.
+
+Jeśli to domyślny template, usuń go i przywróć właściwy ekran:
+- jeśli użytkownik niezalogowany → ekran logowania/rejestracji Family Cart,
+- jeśli zalogowany → lista zakupów/dom AutoSafe.
+
+3. Sprawdź .replit i komendy uruchomienia
+Upewnij się, że Replit uruchamia właściwy projekt:
+
+- npm install, jeśli potrzebne
+- npm run dev albo właściwa komenda TanStack Start
+- port 5000
+- host 0.0.0.0
+
+Nie uruchamiaj przypadkowego przykładowego serwera ani starego preview.
+
+4. Sprawdź package.json
+Zweryfikuj scripts:
+- dev
+- build
+- start
+- lint
+- typecheck
+
+Jeśli start/dev wskazuje na zły plik albo placeholder, popraw.
+
+5. Sprawdź, czy routeTree jest aktualne
+Jeśli TanStack wygenerował routeTree ze starego placeholdera, odśwież/generuj ponownie zgodnie z konfiguracją projektu.
+
+6. Po poprawce uruchom:
+npm run build
+npx tsc --noEmit
+npm run lint
+
+7. Uruchom preview i sprawdź:
+- nie ma już „Hello "/"!”,
+- widoczny jest ekran Family Cart,
+- widoczne są zakładki Logowanie/Rejestracja,
+- branding:
+  Family Cart
+  Version: v26.06.03.1
+  Created by: AutoSafe
+
+8. Potem sprawdź logowanie:
+biuro@autosafe.immo
+adminn
+
+Nie dodawaj nowych funkcji.
+Nie zmieniaj bazy.
+Nie zmieniaj modelu Replit PostgreSQL + JWT.
+Napraw tylko to, że aplikacja pokazuje placeholder zamiast właściwego UI.
+
+Na końcu podsumuj po polsku:
+- który plik renderował „Hello "/"!”,
+- co poprawiłeś,
+- jaka komenda uruchamia aplikację,
+- czy build/typecheck/lint przeszły,
+- czy ekran logowania Family Cart jest widoczny.
