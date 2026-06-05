@@ -1,174 +1,202 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getDb } from "@/integrations/db";
-import { hashPassword, verifyPassword, signToken, verifyToken } from "@/lib/auth.server";
-import { getRequestHeader } from "@tanstack/start-server-core";
+import {
+  getSupabaseAdminClient,
+  getSupabaseAnonServerClient,
+  getSupabaseHost,
+} from "@/integrations/supabase/client.server";
+import { getUserFromRequest, requireUserFromRequest } from "@/lib/auth.server";
 
-// ── helpers ────────────────────────────────────────────────────────────────
-function getBearerToken(): string | null {
-  const auth = getRequestHeader("authorization") ?? getRequestHeader("Authorization");
-  if (!auth?.startsWith("Bearer ")) return null;
-  return auth.slice(7);
+function publicUser(user: {
+  id: string;
+  email?: string | null;
+  email_confirmed_at?: string | null;
+}) {
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    email_confirmed_at: user.email_confirmed_at ?? null,
+  };
 }
 
-async function getUserFromRequest(): Promise<{ id: string; email: string } | null> {
-  const token = getBearerToken();
-  if (!token) return null;
-  const payload = await verifyToken(token);
-  if (!payload) return null;
-  return { id: payload.sub, email: payload.email };
-}
-
-// ── login ──────────────────────────────────────────────────────────────────
 export const loginFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ email: z.string().email(), password: z.string().min(1) }))
   .handler(async ({ data }) => {
-    const sql = getDb();
-    const email = data.email.trim().toLowerCase();
+    const host = getSupabaseHost();
+    console.log("[auth] supabase host", host ?? "missing");
 
-    const [user] = await sql<{ id: string; password_hash: string }[]>`
-      SELECT id, password_hash FROM users WHERE lower(email) = ${email} LIMIT 1
-    `;
-    if (!user) return { ok: false, error: "Nieprawidłowy e-mail lub hasło." };
-
-    const ok = await verifyPassword(data.password, user.password_hash);
-    if (!ok) return { ok: false, error: "Nieprawidłowy e-mail lub hasło." };
-
-    const token = await signToken({ sub: user.id, email });
-    return { ok: true, token, userId: user.id };
-  });
-
-// ── register ───────────────────────────────────────────────────────────────
-export const registerFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    email: z.string().email(),
-    password: z.string().min(6),
-    first_name: z.string().min(1),
-    household_name: z.string().min(1),
-  }))
-  .handler(async ({ data }) => {
-    const sql = getDb();
-    const email = data.email.trim().toLowerCase();
-
-    const [existing] = await sql`SELECT id FROM users WHERE lower(email) = ${email} LIMIT 1`;
-    if (existing) return { ok: false, error: "Konto z tym adresem e-mail już istnieje." };
-
-    const password_hash = await hashPassword(data.password);
-    const householdName = data.household_name.trim();
-    const firstName = data.first_name.trim();
-    const displayName = firstName || email.split("@")[0];
-
-    // Create user + profile + household + membership in one transaction
-    await sql.begin(async (sql) => {
-      const [user] = await sql<{ id: string }[]>`
-        INSERT INTO users (email, password_hash) VALUES (${email}, ${password_hash}) RETURNING id
-      `;
-      await sql`
-        INSERT INTO profiles (user_id, display_name, email, first_name)
-        VALUES (${user.id}, ${displayName}, ${email}, ${firstName})
-      `;
-      const [hh] = await sql<{ id: string }[]>`
-        INSERT INTO households (name, owner_id) VALUES (${householdName}, ${user.id}) RETURNING id
-      `;
-      await sql`
-        INSERT INTO household_members (household_id, user_id, role, status, created_by)
-        VALUES (${hh.id}, ${user.id}, 'owner', 'active', ${user.id})
-      `;
+    const { data: result, error } = await getSupabaseAnonServerClient().auth.signInWithPassword({
+      email: data.email.trim().toLowerCase(),
+      password: data.password,
     });
 
-    return { ok: true, message: "Konto zostało utworzone. Możesz się zalogować." };
+    if (error || !result.session) {
+      console.error("[auth] error", error?.message ?? "Missing session");
+      return { ok: false, error: error?.message ?? "Nieprawidlowy e-mail lub haslo." };
+    }
+
+    console.log("[auth] success", { userId: result.user.id });
+    return {
+      ok: true,
+      token: result.session.access_token,
+      refreshToken: result.session.refresh_token,
+      userId: result.user.id,
+      user: publicUser(result.user),
+    };
   });
 
-// ── getMeFn — returns current user from JWT ────────────────────────────────
+export const registerFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      email: z.string().email(),
+      password: z.string().min(6),
+      first_name: z.string().min(1),
+      household_name: z.string().min(1),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const email = data.email.trim().toLowerCase();
+    const firstName = data.first_name.trim();
+    const householdName = data.household_name.trim();
+    const displayName = firstName || email.split("@")[0];
+    const anon = getSupabaseAnonServerClient();
+    const admin = getSupabaseAdminClient();
+
+    console.log("[auth] supabase host", getSupabaseHost() ?? "missing");
+    const { data: signUp, error } = await anon.auth.signUp({
+      email,
+      password: data.password,
+      options: {
+        data: {
+          display_name: displayName,
+          first_name: firstName,
+        },
+      },
+    });
+
+    if (error || !signUp.user) {
+      console.error("[auth] error", error?.message ?? "Missing user");
+      return { ok: false, error: error?.message ?? "Nie udalo sie utworzyc konta." };
+    }
+
+    const userId = signUp.user.id;
+    const { error: profileError } = await admin.from("profiles").upsert(
+      {
+        user_id: userId,
+        display_name: displayName,
+        email,
+        first_name: firstName,
+        must_complete_profile: false,
+        must_change_password: false,
+      },
+      { onConflict: "user_id" },
+    );
+    if (profileError) return { ok: false, error: profileError.message };
+
+    const { data: household, error: householdError } = await admin
+      .from("households")
+      .insert({ name: householdName, owner_id: userId })
+      .select("id")
+      .single();
+    if (householdError) return { ok: false, error: householdError.message };
+
+    const { error: memberError } = await admin.from("household_members").upsert(
+      {
+        household_id: household.id,
+        user_id: userId,
+        role: "owner",
+        status: "active",
+        created_by: userId,
+      },
+      { onConflict: "household_id,user_id" },
+    );
+    if (memberError) return { ok: false, error: memberError.message };
+
+    console.log("[auth] success", { userId });
+    return {
+      ok: true,
+      message: signUp.session
+        ? "Konto zostalo utworzone. Mozesz sie zalogowac."
+        : "Konto zostalo utworzone. Jesli Supabase wymaga potwierdzenia e-mail, sprawdz skrzynke.",
+    };
+  });
+
 export const getMeFn = createServerFn({ method: "GET" }).handler(async () => {
   const user = await getUserFromRequest();
-  if (!user) return { user: null };
-  // Verify user still exists in the database (guards against stale tokens)
-  const sql = getDb();
-  const [dbUser] = await sql<{ id: string; email: string }[]>`
-    SELECT id, email FROM users WHERE id = ${user.id} LIMIT 1
-  `;
-  if (!dbUser) return { user: null };
-  return { user: { id: dbUser.id, email: dbUser.email } };
+  return { user: user ? publicUser(user) : null };
 });
 
-// ── getMyProfileFn ─────────────────────────────────────────────────────────
 export const getMyProfileFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ userId: z.string() }))
   .handler(async ({ data }) => {
-    const sql = getDb();
-    const [profile] = await sql<{
-      id: string; display_name: string | null; email: string | null;
-      first_name: string | null; last_name: string | null;
-      must_complete_profile: boolean; must_change_password: boolean;
-    }[]>`
-      SELECT id, display_name, email, first_name, last_name, must_complete_profile, must_change_password
-      FROM profiles WHERE user_id = ${data.userId} LIMIT 1
-    `;
+    const caller = await requireUserFromRequest();
+    const userId = data.userId === caller.id ? caller.id : caller.id;
+    const { data: profile, error } = await getSupabaseAdminClient()
+      .from("profiles")
+      .select(
+        "id, display_name, email, first_name, last_name, must_complete_profile, must_change_password",
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    console.log(profile ? "[profile] loaded" : "[profile] missing", { userId });
     return profile ?? null;
   });
 
-// ── getMyHouseholdsFn ──────────────────────────────────────────────────────
 export const getMyHouseholdsFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ userId: z.string() }))
   .handler(async ({ data }) => {
-    const sql = getDb();
-    const rows = await sql<{
-      household_id: string; role: string; status: string;
-      id: string; name: string; owner_id: string;
-    }[]>`
-      SELECT hm.household_id, hm.role, hm.status, h.id, h.name, h.owner_id
-      FROM household_members hm
-      JOIN households h ON h.id = hm.household_id
-      WHERE hm.user_id = ${data.userId} AND hm.status = 'active'
-    `;
-    return rows.map((r) => ({
-      household_id: r.household_id,
-      role: r.role,
-      status: r.status,
-      households: { id: r.id, name: r.name, owner_id: r.owner_id },
-    }));
+    const caller = await requireUserFromRequest();
+    const userId = data.userId === caller.id ? caller.id : caller.id;
+    const { data: rows, error } = await getSupabaseAdminClient()
+      .from("household_members")
+      .select("household_id, role, status, households(id, name, owner_id)")
+      .eq("user_id", userId)
+      .eq("status", "active");
+    if (error) throw new Error(error.message);
+    console.log("[household] memberships count", rows?.length ?? 0);
+    return rows ?? [];
   });
 
-// ── updateProfileFn ────────────────────────────────────────────────────────
 export const updateProfileFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({
-    userId: z.string(),
-    display_name: z.string().optional(),
-    first_name: z.string().optional(),
-    last_name: z.string().optional(),
-    must_complete_profile: z.boolean().optional(),
-    must_change_password: z.boolean().optional(),
-    new_password: z.string().min(6).optional(),
-    current_password: z.string().optional(),
-  }))
+  .inputValidator(
+    z.object({
+      userId: z.string(),
+      display_name: z.string().optional(),
+      first_name: z.string().optional(),
+      last_name: z.string().optional(),
+      must_complete_profile: z.boolean().optional(),
+      must_change_password: z.boolean().optional(),
+      new_password: z.string().min(6).optional(),
+      current_password: z.string().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
-    const sql = getDb();
+    const caller = await requireUserFromRequest();
+    const userId = data.userId === caller.id ? caller.id : caller.id;
+    const admin = getSupabaseAdminClient();
 
-    // If changing password, verify current
     if (data.new_password) {
-      const [user] = await sql<{ password_hash: string }[]>`
-        SELECT password_hash FROM users WHERE id = ${data.userId}
-      `;
-      if (!user) return { ok: false, error: "Nie znaleziono użytkownika." };
-      if (data.current_password) {
-        const ok = await verifyPassword(data.current_password, user.password_hash);
-        if (!ok) return { ok: false, error: "Aktualne hasło jest nieprawidłowe." };
-      }
-      const newHash = await hashPassword(data.new_password);
-      await sql`UPDATE users SET password_hash = ${newHash}, updated_at = now() WHERE id = ${data.userId}`;
+      const { error } = await admin.auth.admin.updateUserById(userId, {
+        password: data.new_password,
+      });
+      if (error) return { ok: false, error: error.message };
     }
 
-    await sql`
-      UPDATE profiles SET
-        display_name = COALESCE(${data.display_name ?? null}, display_name),
-        first_name = COALESCE(${data.first_name ?? null}, first_name),
-        last_name = COALESCE(${data.last_name ?? null}, last_name),
-        must_complete_profile = COALESCE(${data.must_complete_profile ?? null}, must_complete_profile),
-        must_change_password = COALESCE(${data.must_change_password ?? null}, must_change_password),
-        updated_at = now()
-      WHERE user_id = ${data.userId}
-    `;
+    const patch = {
+      ...(data.display_name !== undefined ? { display_name: data.display_name } : {}),
+      ...(data.first_name !== undefined ? { first_name: data.first_name } : {}),
+      ...(data.last_name !== undefined ? { last_name: data.last_name } : {}),
+      ...(data.must_complete_profile !== undefined
+        ? { must_complete_profile: data.must_complete_profile }
+        : {}),
+      ...(data.must_change_password !== undefined
+        ? { must_change_password: data.must_change_password }
+        : {}),
+      updated_at: new Date().toISOString(),
+    };
 
+    const { error } = await admin.from("profiles").update(patch).eq("user_id", userId);
+    if (error) return { ok: false, error: error.message };
     return { ok: true };
   });

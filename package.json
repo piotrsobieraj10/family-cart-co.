@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "ensure:admin": "node scripts/ensure-autosafe-admin.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {

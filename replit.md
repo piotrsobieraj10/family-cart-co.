@@ -32,13 +32,13 @@ Runs on port 5000.
 Set in Replit's environment panel:
 
 - `VITE_SUPABASE_URL` — Supabase project URL
-- `VITE_SUPABASE_PUBLISHABLE_KEY` — Supabase anon/public key
+- `VITE_SUPABASE_ANON_KEY` — Supabase anon/public key
 - `VITE_REGISTRATION_MODE` — `open` | `invite_code` | `disabled`
 - `VITE_EMAIL_CONFIRMATION_REQUIRED` — `true` | `false`
 - `VITE_VAPID_PUBLIC_KEY` — VAPID public key for push notifications
 
 Server-only secrets (add to Replit Secrets if needed):
-- `SUPABASE_SERVICE_ROLE_KEY` — for server-side admin operations
+- `SUPABASE_SERVICE_ROLE_KEY` — for server-side admin operations only
 - `VAPID_PRIVATE_KEY` — for sending push notifications
 
 ## User preferences

@@ -1,17 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { RequireAuth } from "@/pages/RequireAuth";
 import { ActiveListPage } from "@/pages/ActiveListPage";
+import { RequireAuth } from "@/pages/RequireAuth";
 
 export const Route = createFileRoute("/")({
-  component: IndexPage,
+  component: IndexRoute,
 });
 
-function IndexPage() {
-  return (
-    <RequireAuth>
-      {({ userId, householdId, role }) => (
-        <ActiveListPage userId={userId} householdId={householdId} role={role} />
-      )}
-    </RequireAuth>
-  );
+function IndexRoute() {
+  return <RequireAuth>{(ctx) => <ActiveListPage {...ctx} />}</RequireAuth>;
 }

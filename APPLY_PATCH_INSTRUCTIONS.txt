@@ -1,0 +1,27 @@
+Instrukcja zastosowania patcha Family Cart:
+
+1. Rozpakuj ZIP w katalogu projektu Family Cart.
+2. Nadpisz istniejace pliki plikami z paczki.
+3. Ustaw Replit Secrets / Environment Variables:
+   VITE_SUPABASE_URL
+   VITE_SUPABASE_ANON_KEY
+   SUPABASE_SERVICE_ROLE_KEY
+   VITE_VAPID_PUBLIC_KEY
+   VAPID_PUBLIC_KEY
+   VAPID_PRIVATE_KEY
+   VAPID_SUBJECT=mailto:kontakt@autosafe.immo
+4. W Supabase uruchom SQL:
+   Supabase -> SQL Editor -> New query -> wklej zawartosc
+   supabase/migrations/all_migrations_safe.sql -> Run
+5. Utworz lub napraw pierwszego admina:
+   ADMIN_TEMP_PASSWORD=adminn npm run ensure:admin
+6. Uruchom:
+   npm install
+   npm run build
+   npm run dev
+7. Przetestuj logowanie:
+   biuro@autosafe.immo / adminn
+8. Sprawdz dom AutoSafe, dodawanie czlonkow, dodawanie produktu i szybka liste.
+9. Push testuj dopiero po ustawieniu VAPID i deploy Edge Functions.
+
+Po pierwszym logowaniu zmien haslo admina na mocniejsze.

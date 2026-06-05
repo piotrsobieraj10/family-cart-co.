@@ -1,4 +1,4 @@
-project_id = "kgwhmhbnypwumxrwbtxt"
+project_id = "family-cart"
 
 [functions.add-household-user]
 verify_jwt = true
