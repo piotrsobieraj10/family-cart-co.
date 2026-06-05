@@ -85,13 +85,59 @@ export const registerFn = createServerFn({ method: "POST" })
 export const getMeFn = createServerFn({ method: "GET" }).handler(async () => {
   const user = await getUserFromRequest();
   if (!user) return { user: null };
-  // Verify user still exists in the database (guards against stale tokens)
   const sql = getDb();
   const [dbUser] = await sql<{ id: string; email: string }[]>`
     SELECT id, email FROM users WHERE id = ${user.id} LIMIT 1
   `;
   if (!dbUser) return { user: null };
   return { user: { id: dbUser.id, email: dbUser.email } };
+});
+
+// ── getBootstrapFn — single round-trip: user + profile + memberships ───────
+export const getBootstrapFn = createServerFn({ method: "GET" }).handler(async () => {
+  const t0 = Date.now();
+  const user = await getUserFromRequest();
+  if (!user) return { user: null, profile: null, memberships: [] };
+
+  const sql = getDb();
+  const [users, profiles, rows] = await Promise.all([
+    sql<{ id: string; email: string }[]>`
+      SELECT id, email FROM users WHERE id = ${user.id} LIMIT 1
+    `,
+    sql<{
+      id: string;
+      display_name: string | null;
+      email: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      must_complete_profile: boolean;
+      must_change_password: boolean;
+    }[]>`
+      SELECT id, display_name, email, first_name, last_name,
+             must_complete_profile, must_change_password
+      FROM profiles WHERE user_id = ${user.id} LIMIT 1
+    `,
+    sql<{ household_id: string; role: string; status: string; id: string; name: string; owner_id: string }[]>`
+      SELECT hm.household_id, hm.role, hm.status, h.id, h.name, h.owner_id
+      FROM household_members hm
+      JOIN households h ON h.id = hm.household_id
+      WHERE hm.user_id = ${user.id} AND hm.status = 'active'
+    `,
+  ]);
+
+  if (!users[0]) return { user: null, profile: null, memberships: [] };
+  console.log(`[perf] bootstrap DB queries: ${Date.now() - t0}ms`);
+
+  return {
+    user: { id: users[0].id, email: users[0].email },
+    profile: profiles[0] ?? null,
+    memberships: rows.map((r) => ({
+      household_id: r.household_id,
+      role: r.role,
+      status: r.status,
+      households: { id: r.id, name: r.name, owner_id: r.owner_id } as { id: string; name: string; owner_id: string } | null,
+    })),
+  };
 });
 
 // ── getMyProfileFn ─────────────────────────────────────────────────────────

@@ -66,9 +66,12 @@ export function ActiveListPage({
   });
   const listId = listQuery.data?.id;
 
+  // Stores loaded lazily — only when user enables store grouping
   const storesQuery = useQuery({
     queryKey: ["stores", householdId],
     queryFn: () => getStoresFn({ data: { householdId } }),
+    enabled: groupByStore,
+    staleTime: 60_000,
   });
 
   useEffect(() => {

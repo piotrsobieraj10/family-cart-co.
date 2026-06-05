@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
-import { useAuth, useMyProfile, useMyHouseholds } from "@/lib/auth";
+import { useEffect, useRef, type ReactNode } from "react";
+import { useBootstrap, clearToken } from "@/lib/auth";
 import { getActiveHouseholdId, setActiveHouseholdId } from "@/lib/household";
 import type { HouseholdRole } from "@/lib/permissions";
 
@@ -13,68 +13,74 @@ export function RequireAuth({
   requireHousehold?: boolean;
   requireCompleteProfile?: boolean;
 }) {
-  const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const { data: profile, isLoading: profileLoading } = useMyProfile(user?.id);
-  const { data: memberships, isLoading: hhLoading } = useMyHouseholds(user?.id);
+  const t0 = useRef(Date.now());
 
+  // Single bootstrap query — replaces 3 sequential requests (getMeFn → profile → households)
+  const { data, isLoading } = useBootstrap();
+
+  const user = data?.user ?? null;
+  const profile = data?.profile ?? null;
+  const memberships = (data?.memberships ?? []) as Array<{
+    household_id: string;
+    role: HouseholdRole;
+    status: string;
+    households: { id: string; name: string; owner_id: string } | null;
+  }>;
+
+  // Perf logging
   useEffect(() => {
-    if (loading) return;
+    if (!isLoading) {
+      console.log(`[perf] RequireAuth resolved: ${Date.now() - t0.current}ms, user=${!!user}`);
+    }
+  }, [isLoading, user]);
+
+  // Redirect logic
+  useEffect(() => {
+    if (isLoading) return;
+
     if (!user) {
+      clearToken();
       void navigate({ to: "/login", replace: true }).catch(() => {
         if (typeof window !== "undefined") window.location.replace("/login");
       });
       return;
     }
-    if (profileLoading) return;
-    if (
-      requireCompleteProfile &&
-      (profile?.must_complete_profile || profile?.must_change_password)
-    ) {
+
+    if (requireCompleteProfile && (profile?.must_complete_profile || profile?.must_change_password)) {
       void navigate({ to: "/complete-profile", replace: true }).catch(() => {
         if (typeof window !== "undefined") window.location.replace("/complete-profile");
       });
       return;
     }
+
     if (!requireHousehold) return;
-    if (hhLoading) return;
-    if (!memberships || memberships.length === 0) {
+
+    if (memberships.length === 0) {
       void navigate({ to: "/onboarding", replace: true }).catch(() => {
         if (typeof window !== "undefined") window.location.replace("/onboarding");
       });
       return;
     }
+
     const active = getActiveHouseholdId();
     if (memberships.length === 1 && (!active || memberships[0].household_id !== active)) {
       setActiveHouseholdId(memberships[0].household_id);
       return;
     }
-    if (
-      memberships.length > 1 &&
-      (!active || !memberships.find((m) => m.household_id === active))
-    ) {
+    if (memberships.length > 1 && (!active || !memberships.find((m) => m.household_id === active))) {
       void navigate({ to: "/select-household", replace: true }).catch(() => {
         if (typeof window !== "undefined") window.location.replace("/select-household");
       });
     }
-  }, [
-    user,
-    loading,
-    memberships,
-    hhLoading,
-    navigate,
-    profile,
-    profileLoading,
-    requireCompleteProfile,
-    requireHousehold,
-  ]);
+  }, [isLoading, user, profile, memberships, navigate, requireCompleteProfile, requireHousehold]);
 
-  // Not authenticated — redirect immediately (covers SSR hydration cases)
-  if (!loading && !user) {
+  // Immediate redirects for SSR hydration
+  if (!isLoading && !user) {
     if (typeof window !== "undefined") window.location.replace("/login");
     return <Loader />;
   }
-  if (loading || !user || profileLoading) {
+  if (isLoading || !user) {
     return <Loader />;
   }
   if (requireCompleteProfile && (profile?.must_complete_profile || profile?.must_change_password)) {
@@ -82,8 +88,7 @@ export function RequireAuth({
     return <Loader />;
   }
   if (requireHousehold) {
-    if (hhLoading) return <Loader />;
-    if (!memberships || memberships.length === 0) {
+    if (memberships.length === 0) {
       if (typeof window !== "undefined") window.location.replace("/onboarding");
       return <Loader />;
     }
@@ -100,7 +105,7 @@ export function RequireAuth({
         {children({
           userId: user.id,
           householdId: membership.household_id,
-          role: membership.role as HouseholdRole,
+          role: membership.role,
         })}
       </>
     );
@@ -110,8 +115,9 @@ export function RequireAuth({
 
 function Loader() {
   return (
-    <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-      Ładowanie…
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">
+      <div className="text-4xl">🛒</div>
+      <p className="text-sm text-muted-foreground animate-pulse">Ładowanie listy zakupów…</p>
     </div>
   );
 }
