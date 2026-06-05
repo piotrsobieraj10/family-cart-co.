@@ -1,0 +1,211 @@
+Aplikacja Family Cart ładuje się bardzo długo.
+
+Zrób audyt wydajności i przygotuj patch optymalizacyjny bez przebudowy aplikacji od zera.
+
+Nie dodawaj nowych funkcji.
+Nie zmieniaj modelu bazy.
+Nie zmieniaj brandingu.
+Nie psuj działających funkcji.
+
+Aktualny stan:
+- aplikacja działa na Replit PostgreSQL + własny JWT,
+- logowanie: biuro@autosafe.immo / adminn,
+- dom AutoSafe,
+- rola owner,
+- build/typecheck przechodziły,
+- wcześniej naprawiono src/routes/index.tsx, żeby nie pokazywał placeholdera.
+
+Branding ma zostać:
+Family Cart
+Version: v26.06.03.1
+Created by: AutoSafe
+
+CEL:
+Sprawdź, dlaczego aplikacja ładuje się długo i przyspiesz ją.
+
+------------------------------------------------------------
+1. ZMIERZ CZAS ŁADOWANIA
+------------------------------------------------------------
+
+Dodaj tymczasową diagnostykę bez sekretów:
+
+- [perf] app start
+- [perf] auth check start/end
+- [perf] profile load start/end
+- [perf] household load start/end
+- [perf] active list load start/end
+- [perf] items load start/end
+- [perf] stores/prices load start/end
+- [perf] route ready
+
+Nie loguj tokenów, haseł ani danych wrażliwych.
+
+Sprawdź, gdzie jest największe opóźnienie:
+- start aplikacji,
+- auth/JWT,
+- pobieranie profilu,
+- pobieranie domu,
+- pobieranie listy zakupów,
+- baza danych,
+- render komponentów,
+- bundle JS.
+
+------------------------------------------------------------
+2. SPRAWDŹ FRONTEND/BUNDLE
+------------------------------------------------------------
+
+Sprawdź:
+- czy aplikacja nie importuje zbyt dużych bibliotek na starcie,
+- czy strony typu receipts/stores/settings nie są ładowane od razu na ekranie startowym,
+- czy można zastosować lazy loading dla cięższych tras,
+- czy routeTree nie importuje ciężkich modułów niepotrzebnie,
+- czy service worker/PWA nie blokuje ładowania,
+- czy push notifications nie startują automatycznie na starcie aplikacji.
+
+Push nie może spowalniać startu aplikacji.
+Push ma się inicjować dopiero w ustawieniach albo po zalogowaniu, ale bez blokowania UI.
+
+------------------------------------------------------------
+3. SPRAWDŹ AUTH
+------------------------------------------------------------
+
+Sprawdź:
+- czy RequireAuth nie wykonuje kilku tych samych requestów,
+- czy profil i household nie są pobierane wielokrotnie,
+- czy nie ma pętli redirectów,
+- czy getMyProfile/getMemberships nie odpalają się kilka razy przy każdym renderze,
+- czy token JWT nie jest niepotrzebnie odświeżany przy każdym wejściu.
+
+Zoptymalizuj tak, żeby:
+- sesja była sprawdzana raz,
+- profil ładował się raz,
+- dom aktywny ładował się raz,
+- po wejściu do aplikacji dane były cache’owane w stanie aplikacji.
+
+------------------------------------------------------------
+4. SPRAWDŹ BAZĘ REPLIT POSTGRESQL
+------------------------------------------------------------
+
+Sprawdź zapytania do bazy:
+- users,
+- profiles,
+- households,
+- household_members,
+- shopping_lists,
+- shopping_items,
+- stores,
+- product_price_history,
+- receipts.
+
+Znajdź wolne zapytania.
+
+Dodaj indeksy, jeśli ich brakuje, np.:
+- household_members(user_id)
+- household_members(household_id)
+- shopping_lists(household_id)
+- shopping_items(household_id)
+- shopping_items(list_id)
+- shopping_items(created_at)
+- stores(household_id)
+- receipts(household_id)
+- product_price_history(household_id)
+- product_price_history(product_name)
+- activity_log(household_id)
+
+Jeżeli trzeba, przygotuj migrację:
+db/performance_indexes.sql
+albo aktualizację db/schema.sql.
+
+Nie kasuj danych.
+
+------------------------------------------------------------
+5. OGRANICZ DANE NA START
+------------------------------------------------------------
+
+Na pierwszym ekranie po zalogowaniu nie ładuj wszystkiego naraz.
+
+Na start ładuj tylko:
+- profil,
+- aktywny dom,
+- aktywną listę,
+- produkty z aktywnej listy.
+
+Nie ładuj od razu:
+- wszystkich paragonów,
+- całej historii cen,
+- wszystkich sklepów, jeśli niepotrzebne,
+- historii aktywności,
+- push diagnostics.
+
+Te dane ładuj dopiero po wejściu w odpowiednią zakładkę.
+
+------------------------------------------------------------
+6. UI SKELETON / LOADING
+------------------------------------------------------------
+
+Jeśli coś musi się ładować, pokaż szybki ekran:
+- logo / Family Cart,
+- krótki tekst „Ładowanie listy zakupów…”,
+- skeleton kart produktów.
+
+Nie może być długiego pustego ekranu.
+
+------------------------------------------------------------
+7. REPLIT COLD START
+------------------------------------------------------------
+
+Sprawdź, czy długi start wynika z Replit cold start.
+
+Jeśli tak, napisz jasno:
+- pierwszy start po bezczynności może być wolniejszy,
+- kolejne wejścia powinny być szybsze,
+- produkcyjnie warto rozważyć hosting typu Render/Fly/Railway/Vercel + baza Postgres.
+
+Ale mimo tego zoptymalizuj aplikację tak, żeby po uruchomieniu działała szybko.
+
+------------------------------------------------------------
+8. TESTY
+------------------------------------------------------------
+
+Po poprawkach uruchom:
+
+npm run build
+npx tsc --noEmit
+npm run lint
+
+Sprawdź:
+1. Ekran logowania pokazuje się szybko.
+2. Kliknięcie logowania reaguje szybko.
+3. Po zalogowaniu lista zakupów ładuje się szybciej.
+4. Przejścia między zakładkami są płynniejsze.
+5. Dodawanie produktu nie ma opóźnienia.
+6. Dodawanie członka domu nadal działa.
+7. Szybka lista nadal działa.
+8. Sklepy/ceny/paragony nadal działają.
+9. Push nie blokuje startu aplikacji.
+
+------------------------------------------------------------
+9. GIT
+------------------------------------------------------------
+
+Po poprawkach wykonaj:
+
+git status
+git add .
+git commit -m "Optimize Family Cart loading performance"
+git push
+
+Jeśli nie możesz zrobić push, zostaw zmiany i podaj komendy.
+
+------------------------------------------------------------
+10. PODSUMOWANIE
+------------------------------------------------------------
+
+Na końcu podsumuj po polsku:
+- co najbardziej spowalniało aplikację,
+- jakie pliki poprawiono,
+- czy dodano indeksy w bazie,
+- czy ograniczono ilość danych ładowanych na starcie,
+- czy push został odsunięty od startu aplikacji,
+- czy build/typecheck/lint przeszły,
+- czy commit/push został wykonany.
